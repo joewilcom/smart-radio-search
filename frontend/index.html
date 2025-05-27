@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Smart Radio Search</title>
+</head>
+<body>
+  <h1>Smart Radio Station Search</h1>
+  <input id="query" type="text" placeholder="Type your station request..." />
+  <button onclick="search()">Search</button>
+  <ul id="results"></ul>
+
+  <script>
+    async function search() {
+      const query = document.getElementById('query').value;
+      const response = await fetch('https://your-backend-url.onrender.com/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query })
+      });
+      const results = await response.json();
+      const list = document.getElementById('results');
+      list.innerHTML = '';
+      results.forEach(station => {
+        const item = document.createElement('li');
+        item.textContent = `${station.name} - ${station.country}`;
+        list.appendChild(item);
+      });
+    }
+  </script>
+</body>
+</html>
