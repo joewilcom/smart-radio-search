@@ -1,26 +1,26 @@
-# Use official Python image
+# Use Python 3.11 slim as the base image
 FROM python:3.11-slim
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-
-# Create app directory
+# Set working directory
 WORKDIR /app
 
+# Copy all files into the container
+COPY . .
+
 # Install dependencies
-COPY backend/requirements.txt /app/
-RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app source
-COPY backend /app/
+# Ensure Flask knows which app to run
+ENV FLASK_APP=app.py
 
-# Expose the port
+# Optional: prevent bytecode .pyc files
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Optional: unbuffered logs (helpful for Koyeb logging)
+ENV PYTHONUNBUFFERED=1
+
+# Expose the port Koyeb will use
 EXPOSE 8080
 
-# Run the app
-ENV FLASK_APP=app.py
-ENV FLASK_RUN_PORT=8080
-ENV FLASK_RUN_HOST=0.0.0.0
-
-CMD ["flask", "run"]
+# Start the Flask app
+CMD ["flask", "run", "--host=0.0.0.0", "--port=8080"]
