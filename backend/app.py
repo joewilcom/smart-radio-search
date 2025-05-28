@@ -1,44 +1,66 @@
 import os
+import openai
 import requests
 from flask import Flask, request, jsonify
-import openai
+from flask_cors import CORS
 
+# Initialize Flask app
 app = Flask(__name__)
-openai.api_key = os.getenv("OPENAI_API_KEY")
+CORS(app)
 
-@app.route('/search', methods=['POST'])
+# Set up OpenAI API key
+client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+@app.route("/")
+def home():
+    return "Smart Radio Station Search is running!"
+
+@app.route("/search", methods=["POST"])
 def search():
-    user_query = request.json.get('query')
-
-    # Step 1: Use OpenAI to parse the natural language query
-    prompt = f"""
-    Convert this radio station search request into Radio Browser API filters.
-    Query: "{user_query}"
-    Respond with a compact JSON object using keys like 'name', 'country', 'tag', or 'language'.
-    """
-
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": prompt}]
-    )
-
     try:
-        filters_str = response.choices[0].message['content']
-        filters = eval(filters_str)  # ⚠️ Replace with json.loads() if needed for safety
+        data = request.get_json()
+        query = data.get("query", "").strip()
+        if not query:
+            return jsonify([])
+
+        print("Query received:", query)
+
+        # Use OpenAI to extract search tags
+        completion = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Extract relevant music genres, countries, languages, or decades from this query to use as tags in a radio station search. Output a comma-separated list of lowercase tags with no explanation."
+                },
+                {"role": "user", "content": query}
+            ]
+        )
+        tags = completion.choices[0].message.content.strip()
+        print("Extracted tags:", tags)
+
+        # Call Radio Browser API
+        response = requests.get(
+            "https://de1.api.radio-browser.info/json/stations/search",
+            params={
+                "tagList": tags,
+                "hidebroken": True,
+                "limit": 20,
+                "order": "clickcount"
+            },
+            headers={"User-Agent": "smart-radio-search/1.0"}
+        )
+
+        if response.status_code != 200:
+            print("Radio API error:", response.status_code)
+            return jsonify([])
+
+        stations = response.json()
+        return jsonify(stations)
+
     except Exception as e:
-        return jsonify({"error": f"Failed to parse filters: {str(e)}"}), 500
+        print("Error:", e)
+        return jsonify([])
 
-    # Step 2: Use the Radio Browser API to search for stations
-    radio_browser_url = "https://de1.api.radio-browser.info/json/stations/search"
-    try:
-        rb_response = requests.get(radio_browser_url, params=filters)
-        stations = rb_response.json()
-    except Exception as e:
-        return jsonify({"error": f"Failed to query Radio Browser: {str(e)}"}), 500
-
-    # Step 3: Return results
-    return jsonify(stations)
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
