@@ -54,7 +54,7 @@
       resultsDiv.innerHTML = "<p class='loading'>Loading...</p>";
 
       try {
-        const response = await fetch("/search", {
+        const response = await fetch("https://smart-radio-search.fly.dev/search", {
           method: "POST",
           headers: {
             "Content-Type": "application/json"
