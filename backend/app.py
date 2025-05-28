@@ -1,66 +1,47 @@
-import os
-import openai
-import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import requests
 
-# Initialize Flask app
 app = Flask(__name__)
 CORS(app)
 
-# Set up OpenAI API key
-client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+RADIO_BROWSER_API = "https://de1.api.radio-browser.info/json/stations"
 
-@app.route("/")
-def home():
-    return "Smart Radio Station Search is running!"
+def fetch_stations(query="", top=False, filter_dead=True):
+    params = {
+        'limit': 100,
+        'order': 'clickcount',
+        'reverse': True,
+        'hidebroken': filter_dead,
+    }
+
+    if top:
+        # Get top 100 stations sorted by clickcount
+        url = RADIO_BROWSER_API
+    else:
+        # Search with query in name, tags, etc.
+        url = f"{RADIO_BROWSER_API}/search"
+        params['name'] = query
+
+    response = requests.get(url, params=params)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        return []
 
 @app.route("/search", methods=["POST"])
 def search():
-    try:
-        data = request.get_json()
-        query = data.get("query", "").strip()
-        if not query:
-            return jsonify([])
+    data = request.get_json()
+    query = data.get("query", "")
+    top = data.get("top", False)
+    filter_dead = data.get("filter_dead", True)
 
-        print("Query received:", query)
+    stations = fetch_stations(query=query, top=top, filter_dead=filter_dead)
 
-        # Use OpenAI to extract search tags
-        completion = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Extract relevant music genres, countries, languages, or decades from this query to use as tags in a radio station search. Output a comma-separated list of lowercase tags with no explanation."
-                },
-                {"role": "user", "content": query}
-            ]
-        )
-        tags = completion.choices[0].message.content.strip()
-        print("Extracted tags:", tags)
-
-        # Call Radio Browser API
-        response = requests.get(
-            "https://de1.api.radio-browser.info/json/stations/search",
-            params={
-                "tagList": tags,
-                "hidebroken": True,
-                "limit": 20,
-                "order": "clickcount"
-            },
-            headers={"User-Agent": "smart-radio-search/1.0"}
-        )
-
-        if response.status_code != 200:
-            print("Radio API error:", response.status_code)
-            return jsonify([])
-
-        stations = response.json()
-        return jsonify(stations)
-
-    except Exception as e:
-        print("Error:", e)
-        return jsonify([])
+    if top:
+        return jsonify(stations[:10])  # Only return top 10
+    else:
+        return jsonify(stations[:50])  # Limit normal search to 50 results
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    app.run(debug=True)

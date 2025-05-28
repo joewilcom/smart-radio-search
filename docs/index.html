@@ -6,149 +6,158 @@
   <title>Smart Radio Search</title>
   <style>
     body {
-      font-family: system-ui, sans-serif;
-      margin: 2rem;
-      background-color: #f9f9f9;
+      font-family: sans-serif;
+      margin: 1rem;
+      background-color: #f5f5f5;
+      color: #111;
+      transition: background-color 0.3s, color 0.3s;
     }
-
-    h1 {
-      font-size: 1.75rem;
-      margin-bottom: 1rem;
+    .dark {
+      background-color: #121212;
+      color: #eee;
     }
-
-    input {
-      width: 60%;
+    input, button, select {
       padding: 0.5rem;
       font-size: 1rem;
-      margin-right: 0.5rem;
-      border: 1px solid #ccc;
-      border-radius: 4px;
     }
-
-    button {
-      padding: 0.5rem 1rem;
-      font-size: 1rem;
-      background-color: #333;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
     }
-
-    button:hover {
-      background-color: #555;
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1rem;
     }
-
-    .card {
+    .station {
       background: white;
       padding: 1rem;
-      margin: 1rem 0;
       border-radius: 6px;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-      display: flex;
-      gap: 1rem;
-      align-items: flex-start;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
-
-    .favicon {
-      width: 32px;
-      height: 32px;
-      object-fit: contain;
-      margin-top: 4px;
+    .dark .station {
+      background: #1e1e1e;
     }
-
-    .card-content {
-      flex: 1;
-    }
-
-    .station-name {
-      font-weight: bold;
-      font-size: 1.1rem;
-    }
-
-    .country {
-      color: #555;
-      font-style: italic;
-      margin-top: 0.2rem;
-    }
-
-    .tags {
-      color: #333;
-      font-size: 0.9rem;
-      margin-top: 0.5rem;
-    }
-
-    .link {
-      margin-top: 0.5rem;
-      display: inline-block;
-      color: #007bff;
-      text-decoration: none;
-    }
-
-    .link:hover {
-      text-decoration: underline;
-    }
-
     .loading {
       font-style: italic;
-      margin-top: 1rem;
+    }
+    .tag {
+      display: inline-block;
+      background: #ddd;
+      border-radius: 4px;
+      padding: 2px 6px;
+      margin: 2px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .dark .tag {
+      background: #444;
+      color: #eee;
     }
   </style>
+  <script src="https://twemoji.maxcdn.com/v/latest/twemoji.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
-  <h1>Smart Radio Search</h1>
-  <input id="query" placeholder="Try '1970s classic rock from the UK'" />
-  <button onclick="search()">Search</button>
-  <div id="results"></div>
+  <h2>Smart Radio Search</h2>
+  <div class="controls">
+    <input id="query" placeholder="Search for genre, location, etc..." />
+    <button onclick="search()">Search</button>
+    <button onclick="toggleDarkMode()">Toggle Dark Mode</button>
+  </div>
+  <div id="results"><p class="loading">Loading top stations...</p></div>
 
   <script>
+    let playingAudio = null;
+
+    function flagEmoji(code) {
+      if (!code) return '';
+      return String.fromCodePoint(...[...code.toUpperCase()].map(c => 127397 + c.charCodeAt(0)));
+    }
+
+    function toggleDarkMode() {
+      document.body.classList.toggle('dark');
+    }
+
+    function renderStations(stations, label = '') {
+      const resultsDiv = document.getElementById("results");
+      resultsDiv.innerHTML = '';
+      if (label) {
+        const heading = document.createElement('h3');
+        heading.textContent = label;
+        resultsDiv.appendChild(heading);
+      }
+
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+
+      stations.forEach((station, index) => {
+        const div = document.createElement("div");
+        div.className = "station";
+        let tags = station.tags?.split(',') || [];
+        const tagList = tags.slice(0, 5).map(tag => `<span class="tag" onclick="searchTag('${tag.trim()}')">${tag.trim()}</span>`).join(' ');
+        const truncated = tags.length > 5 ? ' <span class="tag">...</span>' : '';
+
+        div.innerHTML = `
+          <strong>${label && index < 10 ? `#${index + 1} ` : ''}${station.name}</strong><br>
+          <em>${station.country || ''} ${flagEmoji(station.countrycode)}</em><br>
+          <div>${tagList}${truncated}</div>
+          <p><strong>Bitrate:</strong> ${station.bitrate || '?'} kbps |
+             <strong>Codec:</strong> ${station.codec || '?'} |
+             <strong>Clicks:</strong> ${station.clickcount} |
+             <strong>Votes:</strong> ${station.votes}</p>
+          <audio controls preload="none" onplay="pauseOthers(this)">
+            <source src="${station.url_resolved}" type="audio/mpeg">
+            Your browser does not support the audio element.
+          </audio><br>
+          <a href="${station.url}" target="_blank">Listen</a>
+        `;
+        grid.appendChild(div);
+      });
+
+      resultsDiv.appendChild(grid);
+      twemoji.parse(resultsDiv); // ← Enable flag rendering everywhere
+    }
+
+    function pauseOthers(current) {
+      if (playingAudio && playingAudio !== current) {
+        playingAudio.pause();
+      }
+      playingAudio = current;
+    }
+
+    function searchTag(tag) {
+      document.getElementById("query").value = tag;
+      search();
+    }
+
     async function search() {
       const query = document.getElementById("query").value.trim();
+      if (!query) return;
       const resultsDiv = document.getElementById("results");
-      resultsDiv.innerHTML = "<p class='loading'>Loading...</p>";
+      resultsDiv.innerHTML = "<p class='loading'>Searching...</p>";
 
-      try {
-        const response = await fetch("https://smart-radio-search.fly.dev/search", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({ query })
-        });
-
-        const stations = await response.json();
-        resultsDiv.innerHTML = "";
-
-        if (!Array.isArray(stations) || stations.length === 0) {
-          resultsDiv.innerHTML = "<p>No stations found. Try a different query.</p>";
-          return;
-        }
-
-        stations.forEach(station => {
-          const card = document.createElement("div");
-          card.className = "card";
-
-          const favicon = station.favicon ? `<img class="favicon" src="${station.favicon}" alt="Favicon">` : '<div class="favicon"></div>';
-          const country = station.country ? `<div class="country">${station.country}</div>` : '';
-          const tags = station.tags ? `<div class="tags">${station.tags}</div>` : '';
-
-          card.innerHTML = `
-            ${favicon}
-            <div class="card-content">
-              <div class="station-name">${station.name}</div>
-              ${country}
-              ${tags}
-              <a class="link" href="${station.url}" target="_blank">Listen</a>
-            </div>
-          `;
-
-          resultsDiv.appendChild(card);
-        });
-      } catch (err) {
-        resultsDiv.innerHTML = "<p>Something went wrong. Please try again later.</p>";
-        console.error(err);
-      }
+      const response = await fetch("https://smart-radio-search.fly.dev/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query, filter_dead: true })
+      });
+      const stations = await response.json();
+      renderStations(stations);
     }
+
+    async function loadTopStations() {
+      const response = await fetch("https://smart-radio-search.fly.dev/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: "", top: true, filter_dead: true })
+      });
+      const stations = await response.json();
+      renderStations(stations, "Top 10 Streaming Stations");
+    }
+
+    loadTopStations();
   </script>
 </body>
 </html>
