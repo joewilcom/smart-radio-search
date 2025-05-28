@@ -63,6 +63,12 @@
   <h2>Smart Radio Search</h2>
   <div class="controls">
     <input id="query" placeholder="Search for genre, location, etc..." />
+    <select id="sortBy">
+      <option value="">Sort By</option>
+      <option value="votes">Votes</option>
+      <option value="clickcount">Clicks</option>
+      <option value="bitrate">Bitrate</option>
+    </select>
     <button onclick="search()">Search</button>
     <button onclick="toggleDarkMode()">Toggle Dark Mode</button>
   </div>
@@ -117,7 +123,7 @@
       });
 
       resultsDiv.appendChild(grid);
-      twemoji.parse(resultsDiv); // ← Enable flag rendering everywhere
+      twemoji.parse(resultsDiv);
     }
 
     function pauseOthers(current) {
@@ -134,24 +140,26 @@
 
     async function search() {
       const query = document.getElementById("query").value.trim();
+      const sortBy = document.getElementById("sortBy").value;
       if (!query) return;
       const resultsDiv = document.getElementById("results");
       resultsDiv.innerHTML = "<p class='loading'>Searching...</p>";
 
-     const response = await fetch("https://simple-naomi-joewilcom-71ae2211.koyeb.app/search", {
+      const response = await fetch("https://simple-naomi-joewilcom-71ae2211.koyeb.app/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, filter_dead: true })
+        body: JSON.stringify({ query, filter_dead: true, sort_by: sortBy })
       });
       const stations = await response.json();
       renderStations(stations);
     }
 
     async function loadTopStations() {
+      const sortBy = document.getElementById("sortBy").value;
       const response = await fetch("https://simple-naomi-joewilcom-71ae2211.koyeb.app/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: "", top: true, filter_dead: true })
+        body: JSON.stringify({ query: "", top: true, filter_dead: true, sort_by: sortBy })
       });
       const stations = await response.json();
       renderStations(stations, "Top 10 Streaming Stations");

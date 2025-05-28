@@ -16,10 +16,8 @@ def fetch_stations(query="", top=False, filter_dead=True):
     }
 
     if top:
-        # Get top 100 stations sorted by clickcount
         url = RADIO_BROWSER_API
     else:
-        # Search with query in name, tags, etc.
         url = f"{RADIO_BROWSER_API}/search"
         params['name'] = query
 
@@ -35,14 +33,17 @@ def search():
     query = data.get("query", "")
     top = data.get("top", False)
     filter_dead = data.get("filter_dead", True)
+    sort_by = data.get("sort_by", "")
 
     stations = fetch_stations(query=query, top=top, filter_dead=filter_dead)
 
+    if sort_by in ["votes", "clickcount", "bitrate"]:
+        stations.sort(key=lambda s: s.get(sort_by) or 0, reverse=True)
+
     if top:
-        return jsonify(stations[:10])  # Only return top 10
+        return jsonify(stations[:10])
     else:
-        return jsonify(stations[:50])  # Limit normal search to 50 results
+        return jsonify(stations[:50])
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
-
