@@ -1,15 +1,20 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
-import openai  # pip install openai
+import openai
+import os
 
 app = Flask(__name__)
 CORS(app)
 
-if not openai.api_key:
+# Load the OpenAI API key and print it for debugging
+openai_key = os.getenv("OPENAI_API_KEY")
+print(f"[DEBUG] OPENAI_API_KEY loaded: {'Yes' if openai_key else 'No'}")
+
+if not openai_key:
     raise RuntimeError("Missing OpenAI API key. Set the OPENAI_API_KEY environment variable.")
 
-
+openai.api_key = openai_key
 RADIO_BROWSER_API = "https://de1.api.radio-browser.info/json/stations"
 
 def fetch_stations(query="", top=False, filter_dead=True, field="name"):
@@ -35,6 +40,24 @@ def fetch_stations(query="", top=False, filter_dead=True, field="name"):
     else:
         return []
 
+def fetch_multi_tag_stations(tags, sort_by="clickcount", top=False, filter_dead=True):
+    all_results = []
+    seen = set()
+
+    for tag in tags:
+        stations = fetch_stations(query=tag.strip(), top=top, filter_dead=filter_dead, field="tag")
+        print(f"[DEBUG] {len(stations)} stations found for tag: '{tag}'")
+        for s in stations:
+            key = s.get("url_resolved")
+            if key and key not in seen:
+                all_results.append(s)
+                seen.add(key)
+
+    if sort_by in ["votes", "clickcount", "bitrate"]:
+        all_results.sort(key=lambda s: s.get(sort_by) or 0, reverse=True)
+
+    return all_results[:10] if top else all_results[:50]
+
 @app.route("/search", methods=["POST"])
 def search():
     data = request.get_json()
@@ -42,12 +65,15 @@ def search():
     top = data.get("top", False)
     filter_dead = data.get("filter_dead", True)
     sort_by = data.get("sort_by", "")
-    field = data.get("field", "name")  # default to name search
+    field = data.get("field", "name")
 
-    stations = fetch_stations(query=query, top=top, filter_dead=filter_dead, field=field)
-
-    if sort_by in ["votes", "clickcount", "bitrate"]:
-        stations.sort(key=lambda s: s.get(sort_by) or 0, reverse=True)
+    if field == "tag":
+        tags = [t.strip() for t in query.replace(",", " ").split()]
+        stations = fetch_multi_tag_stations(tags, sort_by=sort_by, top=top, filter_dead=filter_dead)
+    else:
+        stations = fetch_stations(query=query, top=top, filter_dead=filter_dead, field=field)
+        if sort_by in ["votes", "clickcount", "bitrate"]:
+            stations.sort(key=lambda s: s.get(sort_by) or 0, reverse=True)
 
     return jsonify(stations[:10] if top else stations[:50])
 
@@ -78,7 +104,6 @@ Respond with a comma-separated list only — no explanation.
     except Exception as e:
         print(f"[AI QUERY ERROR]: {e}")
         return jsonify({ "error": str(e) }), 500
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
