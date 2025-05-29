@@ -1,113 +1,55 @@
 import os
-from flask import Flask, request, jsonify, make_response
-from flask_cors import CORS
 import requests
-from openai import OpenAI
-from dotenv import load_dotenv
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 
-# ─── Load environment ─────────────────────────────────────────────────────────
-load_dotenv()
-api_key = os.getenv("OPENAI_API_KEY")
-if not api_key:
-    raise RuntimeError("Missing OPENAI_API_KEY")
-
-# ─── Flask & CORS setup ───────────────────────────────────────────────────────
 app = Flask(__name__)
-client = OpenAI(api_key=api_key)
+# Allow only your GH Pages origin to talk to us
+CORS(app, origins=["https://joewilcom.github.io"])
 
-CORS(
-    app,
-    resources={r"/*": {"origins": ["https://joewilcom.github.io"]}},
-    methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type"]
-)
+RADIO_API = "https://all.api.radio-browser.info/json"
 
-@app.before_request
-def handle_preflight():
-    if request.method == "OPTIONS":
-        resp = make_response()
-        resp.headers["Access-Control-Allow-Origin"]  = "https://joewilcom.github.io"
-        resp.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
-        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        return resp
-
-# ─── Health check ─────────────────────────────────────────────────────────────
-@app.route("/", methods=["GET", "OPTIONS"])
-def home():
-    return "API is up"
-
-# ─── Countries proxy (HTTPS regional endpoint) ────────────────────────────────
-@app.route("/countries", methods=["GET", "OPTIONS"])
+@app.route("/countries")
 def countries():
-    try:
-        resp = requests.get(
-            "https://de1.api.radio-browser.info/json/countries",
-            timeout=5
-        )
-        resp.raise_for_status()
-        return jsonify(resp.json())
-    except Exception as e:
-        app.logger.error("Countries proxy error: %s", e)
-        # Return empty array so front-end won’t crash
-        return jsonify([]), 200
+    # grab top 100 clicks to build a small country list
+    resp = requests.get(f"{RADIO_API}/stations/topclick/100", timeout=5)
+    resp.raise_for_status()
+    seen = {}
+    for s in resp.json():
+        code = s.get("countrycode")
+        name = s.get("country")
+        if code and name and code not in seen:
+            seen[code] = name
+    # sort by country name
+    out = [{"code": c, "name": seen[c]} for c in sorted(seen, key=lambda k: seen[k])]
+    return jsonify(out)
 
-# ─── AI tag refinement ─────────────────────────────────────────────────────────
-@app.route("/ai-query", methods=["POST", "OPTIONS"])
-def ai_query():
-    data = request.get_json(silent=True) or {}
-    q = (data.get("query") or "").strip()
-    if not q:
-        return jsonify({"error": "No query provided"}), 400
-    try:
-        result = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role":"system","content":(
-                    "Turn the user's music query into a few relevant genre tags, comma-separated."
-                )},
-                {"role":"user","content": q}
-            ],
-            max_tokens=20
-        )
-        tags = result.choices[0].message.content.strip()
-        return jsonify({"tags": tags})
-    except Exception as e:
-        app.logger.error("AI error: %s", e)
-        return jsonify({"error": str(e)}), 500
-
-# ─── Station search (and top-stations via POST) ────────────────────────────────
-@app.route("/search", methods=["POST", "OPTIONS"])
+@app.route("/search", methods=["POST"])
 def search():
-    data = request.get_json(silent=True) or {}
+    data = request.get_json() or {}
+    top    = data.get("top", False)
+    country = data.get("countrycode")
+    genre   = data.get("tagList")
+    name    = data.get("name")
 
-    if data.get("top"):
-        url = "http://all.api.radio-browser.info/json/stations/topclick"
-        params = {"order":"clickcount","reverse":"true","limit":10,"hidebroken":"true"}
+    # build query params
+    params = {"limit": 50}
+    if country and country != "ALL":
+        params["countrycode"] = country
+
+    if top:
+        url = f"{RADIO_API}/stations/topclick/50"
     else:
-        q           = data.get("query", "")
-        field       = data.get("field", "name")
-        sort_by     = data.get("sort_by", "votes")
-        filter_dead = bool(data.get("filter_dead", False))
+        url = f"{RADIO_API}/stations/search"
+        if genre and genre != "ALL":
+            params["tagList"] = genre
+        if name:
+            params["name"] = name
 
-        url = "http://all.api.radio-browser.info/json/stations/search"
-        params = {
-            field:     q,
-            "order":   sort_by,
-            "reverse": "true",
-            "limit":   50
-        }
-        if filter_dead:
-            params["hidebroken"] = "true"
+    resp = requests.get(url, params=params, timeout=5)
+    resp.raise_for_status()
+    return jsonify(resp.json())
 
-    try:
-        resp = requests.get(url, params=params, timeout=5)
-        resp.raise_for_status()
-        return jsonify(resp.json())
-    except Exception as e:
-        app.logger.error("Search error: %s", e)
-        return jsonify([]), 500
-
-# ─── Run ───────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    # for local testing
+    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
