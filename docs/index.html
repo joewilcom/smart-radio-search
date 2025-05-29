@@ -42,7 +42,7 @@
       display: flex;
       flex-wrap: wrap;
       gap: 0.5rem;
-      margin-bottom: 1rem;
+      margin-bottom: 0.5rem;
     }
     .controls input,
     .controls select,
@@ -54,6 +54,16 @@
     }
     .controls button {
       cursor: pointer;
+    }
+
+    /* AI suggestion line */
+    #ai-result {
+      margin: 0 1rem 1rem;
+      font-size: 0.9rem;
+      color: #555;
+    }
+    #ai-result strong {
+      color: var(--link);
     }
 
     /* ─── Stations Grid ─────────────────────────────────────────────────────── */
@@ -145,6 +155,8 @@
 
       <button id="toggle-dark">Toggle Dark Mode</button>
     </div>
+
+    <p id="ai-result"></p>
   </header>
 
   <main>
@@ -163,41 +175,48 @@
       'punk','latin'
     ];
 
-    // UI references
+    // UI refs
     const searchInput  = document.getElementById('search-input');
     const searchBtn    = document.getElementById('search-button');
     const countrySel   = document.getElementById('country-filter');
     const genreSel     = document.getElementById('genre-filter');
     const sortSel      = document.getElementById('sort-filter');
     const toggleDark   = document.getElementById('toggle-dark');
+    const aiResultEl   = document.getElementById('ai-result');
     const stationsDiv  = document.getElementById('stations');
-    let currentAudio   = null;
+    let currentAudio = null;
 
-    // Wire events
+    // wire events
     toggleDark.addEventListener('click', ()=>{
-      document.body.dataset.theme = document.body.dataset.theme === 'light' ? 'dark' : 'light';
+      document.body.dataset.theme =
+        document.body.dataset.theme === 'light' ? 'dark' : 'light';
     });
     searchBtn.addEventListener('click', runSearch);
-    [countrySel, genreSel, sortSel].forEach(el => el.addEventListener('change', runSearch));
-    searchInput.addEventListener('keydown', e=>{ if(e.key==='Enter') runSearch(); });
+    [countrySel, genreSel, sortSel].forEach(el =>
+      el.addEventListener('change', runSearch)
+    );
+    searchInput.addEventListener('keydown', e=>{
+      if(e.key==='Enter') runSearch();
+    });
 
-    // Init on load
+    // on load
     window.addEventListener('DOMContentLoaded', async ()=>{
       populateGenres();
       await fetchCountries();
-      await searchStations({ top: true });
+      await runSearch({ top: true });
     });
 
-    // Populate static genres
+    // fill static genres
     function populateGenres(){
       COMMON_GENRES.sort().forEach(g=>{
         const o = document.createElement('option');
-        o.value = g; o.textContent = g.charAt(0).toUpperCase() + g.slice(1);
+        o.value = g;
+        o.textContent = g.charAt(0).toUpperCase() + g.slice(1);
         genreSel.append(o);
       });
     }
 
-    // Fetch country list
+    // fetch full country list
     async function fetchCountries(){
       try {
         const res = await fetch(`${API_BASE}/countries`);
@@ -208,65 +227,84 @@
           o.textContent = `${c.code.toLowerCase()} ${c.name}`;
           countrySel.append(o);
         });
-      } catch(err){
-        console.warn('Country fetch failed', err);
+      } catch(e){
+        console.warn('Country fetch failed', e);
       }
     }
 
-    // Main search runner
-    async function runSearch(){
-      const name = searchInput.value.trim();
-      const countrycode = countrySel.value;
-      const tag = genreSel.value;
-      const payload = { top: false, filter_dead: true };
-      if(name)          payload.name = name;
-      if(countrycode)   payload.countrycode = countrycode;
-      if(tag)           payload.tagList = tag;
-      await searchStations(payload);
-    }
-
-    // Fetch & render helper
-    async function searchStations(payload){
+    // run search (or top)
+    async function runSearch(opts = {}){
+      aiResultEl.textContent = '';
       stationsDiv.innerHTML = '<p>Loading…</p>';
+
+      // build payload
+      let payload = { filter_dead: true, sort_by: sortSel.value, ...opts };
+      if(!opts.top){
+        const text = searchInput.value.trim();
+        if(text){
+          // AI refinement
+          try {
+            const r = await fetch(`${API_BASE}/ai-query`, {
+              method:'POST',
+              headers:{'Content-Type':'application/json'},
+              body: JSON.stringify({query:text})
+            });
+            const js = await r.json();
+            if(js.tags){
+              aiResultEl.innerHTML =
+                'AI suggested tags: <strong>'+js.tags+'</strong>';
+              payload.tagList = js.tags;
+            } else {
+              payload.name = text;
+            }
+          } catch {}
+        }
+        // if no text but genre selected
+        if(!payload.name && genreSel.value){
+          payload.tagList = genreSel.value;
+        }
+        // country filter
+        if(countrySel.value){
+          payload.countrycode = countrySel.value;
+        }
+      }
+
+      // fetch stations
       try {
-        const res = await fetch(`${API_BASE}/search`, {
-          method: 'POST',
-          headers: {'Content-Type':'application/json'},
+        const r = await fetch(`${API_BASE}/search`, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
           body: JSON.stringify(payload)
         });
-        const data = await res.json();
-        if(!Array.isArray(data) || data.length === 0){
-          stationsDiv.innerHTML = '<p>No stations found. Try a broader search.</p>';
-          return;
-        }
-        renderStations(data);
-      } catch(err){
-        console.error(err);
+        const data = await r.json();
+        renderStations(Array.isArray(data)? data : []);
+      } catch(e){
+        console.error(e);
         stationsDiv.innerHTML = '<p>Failed to load stations.</p>';
       }
     }
 
-    // Render and sort stations
+    // render
     function renderStations(list){
-      // sort front-end
-      const key = sortSel.value;
-      list.sort((a,b)=> b[key] - a[key]);
-
+      if(!list.length){
+        stationsDiv.innerHTML = '<p>No stations found.</p>';
+        return;
+      }
       stationsDiv.innerHTML = '';
-      list.forEach((s,i)=> renderCard(s,i+1));
+      list.forEach((st,i)=> createCard(st,i+1));
     }
 
-    // Create one station card
-    function renderCard(st, rank){
+    // create a card
+    function createCard(st,rank){
       const card = document.createElement('div');
       card.className = 'station-card';
 
-      // Title
+      // title
       const h2 = document.createElement('h2');
       h2.textContent = `#${rank} ${st.name}`;
       card.append(h2);
 
-      // Country + flag
+      // country + flag
       const ctr = document.createElement('div');
       ctr.className = 'country';
       if(st.countrycode){
@@ -276,20 +314,20 @@
         img.onerror = ()=>img.remove();
         ctr.append(img);
       }
-      ctr.append(document.createTextNode(st.country || ''));
+      ctr.append(document.createTextNode(st.country||''));
       card.append(ctr);
 
-      // Audio
+      // audio
       const audio = document.createElement('audio');
       audio.controls = true;
       audio.src = st.url_resolved || st.url;
       audio.addEventListener('play', ()=>{
-        if(currentAudio && currentAudio !== audio) currentAudio.pause();
+        if(currentAudio && currentAudio!==audio) currentAudio.pause();
         currentAudio = audio;
       });
       card.append(audio);
 
-      // Stats
+      // stats
       const stats = document.createElement('div');
       stats.className = 'stats';
       stats.innerHTML = `
@@ -299,15 +337,14 @@
       `;
       card.append(stats);
 
-      // Tags
+      // tags
       if(st.tags){
         const tg = document.createElement('div');
         tg.className = 'tags';
         const tags = st.tags.split(/,|\s+/).map(t=>t.trim()).filter(Boolean).slice(0,5);
         tg.innerHTML = 'Tags: ' + tags.map(t=>
           `<a href="#" data-tag="${t}">${t}</a>`
-        ).join(', ') + (st.tags.split(',').length>5 ? ' …' : '');
-        // make tags clickable
+        ).join(', ') + (st.tags.split(',').length>5?' …':'');
         tg.querySelectorAll('a').forEach(a=>{
           a.addEventListener('click', e=>{
             e.preventDefault();
