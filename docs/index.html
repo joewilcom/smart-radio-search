@@ -6,15 +6,14 @@
   <title>Smart Radio Search v1.4</title>
   <script src="twemoji.min.js"></script>
   <style>
-    /* ─── override all Twemoji flags to be small inline icons ─── */
+    /* Tiny Twemoji flags */
     .emoji {
       display: inline-block;
       height: 1em !important;
-      width: auto  !important;
+      width: auto !important;
       vertical-align: -0.1em !important;
-      margin: 0 .1em 0 .05em !important;
+      margin: 0 .1em .0 .05em !important;
     }
-
     body {
       margin: 0;
       font-family: sans-serif;
@@ -38,8 +37,8 @@
       flex: 1 1 250px;
       padding: .5rem;
     }
-    .controls button,
-    .controls select {
+    .controls select,
+    .controls button {
       padding: .5rem 1rem;
       white-space: nowrap;
     }
@@ -104,6 +103,7 @@
   <div id="results"></div>
 
   <script>
+    // Convert ISO country code to flag emoji
     function countryCodeToFlag(cc) {
       return cc
         ? cc.toUpperCase()
@@ -112,13 +112,19 @@
             .join("")
         : "";
     }
+
+    // Toggle dark mode
     function toggleDark() {
       document.body.classList.toggle("dark");
     }
 
+    // Wire up search triggers
     document.getElementById("searchBtn").onclick = search;
     document.getElementById("query").addEventListener("keydown", e => {
-      if (e.key === "Enter") { e.preventDefault(); search(); }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        search();
+      }
     });
     document.getElementById("results").addEventListener("click", e => {
       if (e.target.classList.contains("tag")) {
@@ -127,8 +133,10 @@
       }
     });
 
+    // Initial load: top stations
     window.addEventListener("DOMContentLoaded", () => loadAndRender({ top: true }));
 
+    // Generic loader for top & search
     async function loadAndRender(opts) {
       const resDiv = document.getElementById("results");
       document.getElementById("aiResult").textContent = "";
@@ -141,62 +149,117 @@
       };
 
       try {
-        const r = await fetch("https://simple-naomi-joewilcom-71ae2211.koyeb.app/search", {
+        const res = await fetch("https://simple-naomi-joewilcom-71ae2211.koyeb.app/search", {
           method: "POST",
-          headers:{ "Content-Type":"application/json" },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         });
-        if (!r.ok) throw new Error(r.status);
-        let stations = await r.json();
+        if (!res.ok) throw new Error(res.status);
+        let stations = await res.json();
 
-        // client‐side filters
+        // Client-side filters
         const country = document.getElementById("countryFilter").value;
         const genre   = document.getElementById("genreFilter").value;
         stations = stations
           .filter(s => !country || s.countrycode === country)
           .filter(s => !genre   || (s.tags||"").split(",").map(t=>t.trim()).includes(genre));
 
+        // Populate filters once on top load
         if (opts.top) populateFilters(stations);
 
-        stations.sort((a,b)=>(b.votes||0)-(a.votes||0));
-
+        // Always sort by votes desc
+        stations.sort((a,b) => (b.votes||0)-(a.votes||0));
         renderStations(stations);
       } catch {
         resDiv.innerHTML = "<p class='loading'>Failed to load stations.</p>";
       }
     }
 
+    // Search with AI-tag fallback
     async function search() {
       const raw = document.getElementById("query").value.trim();
       if (!raw) return;
+      const sortBy = document.getElementById("sortBy").value;
+      const aiEl   = document.getElementById("aiResult");
+      const resDiv = document.getElementById("results");
+      resDiv.innerHTML = "<p class='loading'>Thinking…</p>";
+      aiEl.textContent = "";
+
+      // 1) Get AI tags
+      let finalQuery = raw;
+      let field      = "name";
       try {
-        const ai = await fetch("https://simple-naomi-joewilcom-71ae2211.koyeb.app/ai-query", {
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
+        const aiRes = await fetch("https://simple-naomi-joewilcom-71ae2211.koyeb.app/ai-query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: raw })
         });
-        const { tags } = await ai.json();
+        const { tags } = await aiRes.json();
         if (tags) {
-          document.getElementById("aiResult").innerHTML =
-            `Showing results for: <strong>${tags}</strong>`;
-          return loadAndRender({ query: tags, field: "tag" });
+          finalQuery = tags.trim();
+          field      = "tag";
+          aiEl.innerHTML = `Showing results for: <strong>${finalQuery}</strong>`;
         }
       } catch {
-        console.warn("AI refine failed");
+        console.warn("AI refine failed; using name search");
       }
-      loadAndRender({ query: raw, field: "name" });
+
+      // 2) Fetch by tags or name
+      let stations = await fetchStations(finalQuery, field, sortBy);
+
+      // 3) Fallback to name if tags returned nothing
+      if (field === "tag" && stations.length === 0) {
+        console.warn("No tag results; retrying name search");
+        finalQuery = raw;
+        field      = "name";
+        aiEl.innerHTML = `No tag matches; searching names for: <strong>${raw}</strong>`;
+        stations = await fetchStations(finalQuery, field, sortBy);
+      }
+
+      // 4) Render
+      renderStations(stations);
     }
 
+    // Helper to query /search and merge multi-term results
+    async function fetchStations(query, field, sortBy) {
+      const terms = field === "tag"
+        ? query.split(",").map(s=>s.trim()).filter(Boolean)
+        : query.split(/\s+/).filter(Boolean);
+
+      const allResults = await Promise.all(
+        terms.map(term =>
+          fetch("https://simple-naomi-joewilcom-71ae2211.koyeb.app/search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: term, field, sort_by: sortBy, filter_dead: true })
+          }).then(r => r.ok ? r.json() : [])
+        )
+      );
+
+      const seen = new Map();
+      allResults.flat().forEach(s => {
+        const key = s.stationuuid || s.url_resolved;
+        if (!seen.has(key)) seen.set(key, s);
+      });
+
+      return Array.from(seen.values())
+                  .sort((a,b) => (b.votes||0)-(a.votes||0))
+                  .slice(0,50);
+    }
+
+    // Populate country & genre filters
     function populateFilters(stations) {
       const cf = document.getElementById("countryFilter");
       const gf = document.getElementById("genreFilter");
       const countries = new Set(), genres = new Set();
+
       stations.forEach(s => {
         if (s.countrycode) countries.add(s.countrycode);
-        (s.tags||"").split(",").map(t=>t.trim())
-          .filter(Boolean).forEach(t=>genres.add(t));
+        (s.tags||"").split(",").map(t=>t.trim()).filter(Boolean)
+                       .forEach(t=>genres.add(t));
       });
-      Array.from(countries).sort().forEach(cc => {
+
+      countries.forEach(cc => {
         const opt = document.createElement("option");
         opt.value = cc;
         opt.textContent = `${countryCodeToFlag(cc)} ${cc}`;
@@ -208,17 +271,21 @@
         opt.textContent = t;
         gf.appendChild(opt);
       });
-      [cf,gf].forEach(sel =>
+
+      [cf, gf].forEach(sel =>
         sel.addEventListener("change", () => {
-          const ai = document.getElementById("aiResult").textContent;
-          if (ai) {
-            const tags = ai.match(/<strong>(.*)<\/strong>/)[1];
+          const aiText = document.getElementById("aiResult").textContent;
+          if (aiText) {
+            const tags = aiText.match(/<strong>(.*)<\/strong>/)[1];
             loadAndRender({ query: tags, field: "tag" });
-          } else loadAndRender({ top: true });
+          } else {
+            loadAndRender({ top: true });
+          }
         })
       );
     }
 
+    // Render station cards
     function renderStations(stations) {
       const c = document.getElementById("results");
       c.innerHTML = "";
@@ -226,20 +293,24 @@
         c.innerHTML = "<p>No stations found. Try a broader search.</p>";
         return;
       }
+
       stations.forEach((s,i) => {
-        let url = s.url_resolved||"";
-        if (url.startsWith("http://")) url = url.replace("http://","https://");
+        let url = s.url_resolved || "";
+        if (url.startsWith("http://")) url = url.replace("http://", "https://");
         if (!url.startsWith("https://")) return;
+
         const tags = (s.tags||"").split(",").map(t=>t.trim()).filter(Boolean);
         const disp = tags.slice(0,5);
         let tagsHTML = disp.map(t=>`<a class="tag">${t}</a>`).join(", ");
-        if (tags.length>5) tagsHTML += ", …";
+        if (tags.length > 5) tagsHTML += ", …";
+
         const flag = countryCodeToFlag(s.countrycode);
+
         const card = document.createElement("div");
         card.className = "card";
         card.innerHTML = `
           <h3>#${i+1} ${s.name}</h3>
-          <p class="meta">${flag} ${s.country||"Unknown"}</p>
+          <p class="meta">${flag} ${s.country||"Unknown country"}</p>
           <audio controls src="${url}"></audio>
           <p class="now-playing">Now playing: —</p>
           <p class="meta"><strong>Clicks:</strong> ${s.clickcount||0} | <strong>Votes:</strong> ${s.votes||0}</p>
@@ -248,17 +319,21 @@
         `;
         c.appendChild(card);
       });
-      // Twemoji flags from CDNJS
+
+      // Twemoji flags via CDNJS
       twemoji.parse(document.body, {
         base:   "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/",
         folder: "svg",
         ext:    ".svg"
       });
-      // one‐stream‐at‐a‐time
+
+      // Only one audio at a time
       const auds = document.querySelectorAll("audio");
-      auds.forEach(a => a.addEventListener("play", () =>
-        auds.forEach(o=>{ if(o!==a) o.pause(); })
-      ));
+      auds.forEach(a =>
+        a.addEventListener("play", () =>
+          auds.forEach(o => { if (o !== a) o.pause(); })
+        )
+      );
     }
   </script>
 </body>
