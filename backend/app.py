@@ -5,16 +5,16 @@ import requests
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# Load .env at project root containing OPENAI_API_KEY
+# load .env which contains OPENAI_API_KEY
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
-    raise RuntimeError("Missing OPENAI_API_KEY environment variable")
+    raise RuntimeError("Missing OPENAI_API_KEY")
 
 client = OpenAI(api_key=api_key)
 app    = Flask(__name__)
 
-# Enable CORS for your GH Pages frontend and local dev
+# allow both GH Pages and local dev, on all routes
 CORS(
     app,
     resources={r"/*": {"origins": [
@@ -57,7 +57,6 @@ def ai_query():
 def search():
     data = request.get_json() or {}
 
-    # Top-click stations?
     if data.get("top"):
         url = "http://all.api.radio-browser.info/json/stations/topclick"
         params = {
@@ -67,9 +66,8 @@ def search():
             "hidebroken": "true"
         }
     else:
-        # Full-text or tag-based search
         query       = data.get("query", "")
-        field       = data.get("field", "name")   # name or tag
+        field       = data.get("field", "name")
         sort_by     = data.get("sort_by", "votes")
         filter_dead = data.get("filter_dead", False)
 
@@ -86,12 +84,10 @@ def search():
     try:
         r = requests.get(url, params=params, timeout=5)
         r.raise_for_status()
-        stations = r.json()
+        return jsonify(r.json())
     except Exception as e:
         print("Error in /search:", e)
         return jsonify([]), 500
-
-    return jsonify(stations)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

@@ -18,7 +18,7 @@
   </style>
 </head>
 <body>
-  <h1>Smart Radio Search v1.2</h1>
+  <h1>Smart Radio Search v1.3</h1>
 
   <input
     id="query"
@@ -46,7 +46,6 @@
 
       if (!query) return;
 
-      // ensure these are always defined
       let finalQuery  = query;
       let field       = "name";
       let refinedTags = "";
@@ -54,7 +53,7 @@
       resultsDiv.innerHTML  = "<p class='loading'>Thinking…</p>";
       aiResultDiv.innerHTML = "";
 
-      // 1) Try the AI-assisted tag refinement
+      // 1) AI-assisted tag refinement
       try {
         const aiRes  = await fetch(
           "https://simple-naomi-joewilcom-71ae2211.koyeb.app/ai-query",
@@ -75,12 +74,13 @@
       }
 
       if (refinedTags && refinedTags !== query) {
-        aiResultDiv.innerHTML = `Showing results for: <strong>${refinedTags}</strong>`;
+        aiResultDiv.innerHTML =
+          `Showing results for: <strong>${refinedTags}</strong>`;
       }
 
-      // 2) Fetch from your /search endpoint
+      // 2) Call /search
       try {
-        const response = await fetch(
+        const res = await fetch(
           "https://simple-naomi-joewilcom-71ae2211.koyeb.app/search",
           {
             method: "POST",
@@ -93,8 +93,8 @@
             })
           }
         );
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const stations = await response.json();
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const stations = await res.json();
         renderStations(stations);
       } catch (err) {
         console.error("Search fetch failed:", err);
@@ -109,7 +109,7 @@
         "<p class='loading'>Loading top stations…</p>";
 
       try {
-        const response = await fetch(
+        const res = await fetch(
           "https://simple-naomi-joewilcom-71ae2211.koyeb.app/search",
           {
             method: "POST",
@@ -121,8 +121,8 @@
             })
           }
         );
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const stations = await response.json();
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const stations = await res.json();
         renderStations(stations);
       } catch (err) {
         console.error("Top station fetch failed:", err);
