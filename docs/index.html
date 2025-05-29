@@ -21,13 +21,7 @@
       --card-bg: #333;
       --link: #58a6ff;
     }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
       background: var(--bg);
@@ -47,7 +41,6 @@
       margin-bottom: 1rem;
       font-size: 0.95rem;
     }
-
     .controls {
       display: flex;
       flex-wrap: wrap;
@@ -83,7 +76,6 @@
       display: flex;
       flex-direction: column;
     }
-
     .station-card h2 {
       font-size: 1.25rem;
       margin-bottom: 0.5rem;
@@ -134,12 +126,9 @@
       text-decoration: underline;
     }
   </style>
-
-  <!-- your existing front-end logic -->
-  <script src="smart-radio-search.js" defer></script>
 </head>
-<body data-theme="light">
 
+<body data-theme="light">
   <header>
     <h1>Smart Radio Search</h1>
     <p class="description">
@@ -161,7 +150,7 @@
 
       <select id="sort-filter">
         <option value="votes">Votes ↓</option>
-        <option value="clicks">Clicks ↓</option>
+        <option value="clickcount">Clicks ↓</option>
         <option value="bitrate">Bitrate ↓</option>
       </select>
 
@@ -171,9 +160,173 @@
 
   <main>
     <div id="stations">
-      <!-- JS will inject cards here -->
+      <!-- station cards get injected here -->
     </div>
   </main>
 
+  <script>
+    (function(){
+      const API_BASE = 'https://your-api-domain.com';  // ← adjust to your backend URL
+
+      // UI refs
+      const searchInput  = document.getElementById('search-input');
+      const searchBtn    = document.getElementById('search-button');
+      const countrySel   = document.getElementById('country-filter');
+      const genreSel     = document.getElementById('genre-filter');
+      const sortSel      = document.getElementById('sort-filter');
+      const toggleDark   = document.getElementById('toggle-dark');
+      const stationsDiv  = document.getElementById('stations');
+      let currentAudio   = null;
+
+      // attach events
+      toggleDark.addEventListener('click', _=>{
+        document.body.dataset.theme = document.body.dataset.theme === 'light' ? 'dark' : 'light';
+      });
+      searchBtn.addEventListener('click', runSearch);
+      countrySel.addEventListener('change', runSearch);
+      genreSel.addEventListener('change', runSearch);
+      sortSel.addEventListener('change', runSearch);
+
+      // on load: populate filters & show top
+      window.addEventListener('DOMContentLoaded', async ()=>{
+        await Promise.all([fetchCountries(), fetchGenres()]);
+        loadTop();
+      });
+
+      // fetch country list
+      async function fetchCountries(){
+        try {
+          let res = await fetch(API_BASE + '/countries');
+          let list = await res.json();
+          list.forEach(c => {
+            let opt = document.createElement('option');
+            opt.value = c.code;
+            opt.textContent = c.code.toLowerCase() + ' ' + c.name;
+            countrySel.append(opt);
+          });
+        } catch(e){
+          console.warn('Country fetch failed',e);
+        }
+      }
+
+      // common genres (top 20)
+      const COMMON = [
+        'pop','rock','jazz','classical','hip hop','electronic',
+        'dance','country','blues','reggae','metal','folk',
+        'soul','funk','disco','r&b','indie','alternative',
+        'punk','latin'
+      ];
+      function fetchGenres(){
+        COMMON.forEach(g=>{
+          let o = document.createElement('option');
+          o.value = g;
+          o.textContent = g.charAt(0).toUpperCase() + g.slice(1);
+          genreSel.append(o);
+        });
+      }
+
+      // load “top stations” on page load
+      async function loadTop(){
+        fetchAndRender(API_BASE + '/top');
+      }
+
+      // runSearch triggered by any filter or input
+      async function runSearch(){
+        let name  = searchInput.value.trim();
+        let code  = countrySel.value;
+        let tag   = genreSel.value;
+        let sort  = sortSel.value;
+        let qs = new URLSearchParams();
+        if(name) qs.set('name', name);
+        if(tag)  qs.set('tag', tag);
+        if(code) qs.set('country', code);
+        qs.set('sort', sort);
+        fetchAndRender(API_BASE + '/search?' + qs);
+      }
+
+      // fetch + render helper
+      async function fetchAndRender(url){
+        stationsDiv.innerHTML = 'Loading…';
+        try {
+          let res = await fetch(url);
+          let data = await res.json();
+          if(!data.length) {
+            stationsDiv.innerHTML = '<p style="padding:1rem;">No stations found. Try a broader search.</p>';
+            return;
+          }
+          stationsDiv.innerHTML = '';
+          data.forEach(renderCard);
+        } catch(e){
+          console.error(e);
+          stationsDiv.innerHTML = '<p style="padding:1rem;">Failed to load stations.</p>';
+        }
+      }
+
+      // render one station
+      function renderCard(st){
+        let card = document.createElement('div');
+        card.className = 'station-card';
+
+        // title
+        let h2 = document.createElement('h2');
+        h2.textContent = `#${st.rank||''} ${st.name}`;
+        card.append(h2);
+
+        // country & flag
+        let ctr = document.createElement('div');
+        ctr.className = 'country';
+        if(st.countrycode){
+          let img = document.createElement('img');
+          img.className = 'flag';
+          img.src = `https://flagcdn.com/1x1/${st.countrycode.toLowerCase()}.svg`;
+          img.onerror = _=>img.remove();
+          ctr.append(img);
+        }
+        ctr.append(document.createTextNode(st.country || ''));
+        card.append(ctr);
+
+        // audio
+        let audio = document.createElement('audio');
+        audio.controls = true;
+        audio.src = st.url_resolved || st.url;
+        audio.addEventListener('play', ()=> {
+          if(currentAudio && currentAudio !== audio) currentAudio.pause();
+          currentAudio = audio;
+        });
+        card.append(audio);
+
+        // stats
+        let stat = document.createElement('div');
+        stat.className = 'stats';
+        stat.innerHTML = `
+          <em>Now playing: —</em>
+          Clicks: ${st.clickcount} | Votes: ${st.votes}<br>
+          Bitrate: ${st.bitrate} kbps | Codec: ${st.codec}
+        `;
+        card.append(stat);
+
+        // tags
+        if(st.tags){
+          let tg = document.createElement('div');
+          tg.className = 'tags';
+          tg.innerHTML = 'Tags: ' +
+            st.tags.split(/,|\s+/).map(t=>t.trim()).filter(Boolean).slice(0,5)
+              .map(t=>`<a href="#" data-tag="${t}">${t}</a>`).join(', ');
+          // clicking a tag re-searches
+          tg.querySelectorAll('a').forEach(a=>{
+            a.addEventListener('click', e=>{
+              e.preventDefault();
+              genreSel.value = a.dataset.tag;
+              runSearch();
+            });
+          });
+          card.append(tg);
+        }
+
+        stationsDiv.append(card);
+      }
+
+    })();
+  </script>
 </body>
 </html>
