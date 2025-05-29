@@ -5,17 +5,16 @@ import requests
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# ─── Load env & initialize ─────────────────────────────────────────────────────
+# ─── Load env & init ────────────────────────────────────────────────────────────
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
-    raise RuntimeError("Missing OPENAI_API_KEY")
+    raise RuntimeError("Missing OPENAI_API_KEY in your environment.")
 
 client = OpenAI(api_key=api_key)
 app    = Flask(__name__)
 
-# ─── Global CORS ────────────────────────────────────────────────────────────────
-# Allow the frontend origin & local dev, on ALL routes / methods
+# ─── Enable CORS on all routes & methods ────────────────────────────────────────
 CORS(
     app,
     resources={r"/*": {"origins": [
@@ -29,40 +28,43 @@ CORS(
 # ─── Health check ───────────────────────────────────────────────────────────────
 @app.route("/", methods=["GET", "OPTIONS"])
 def home():
-    return "Smart Radio Search API is running."
+    return "Smart Radio Search API is up."
 
-# ─── AI Tag Refinement Endpoint ─────────────────────────────────────────────────
+# ─── AI‐powered tag refinement ──────────────────────────────────────────────────
 @app.route("/ai-query", methods=["POST", "OPTIONS"])
 def ai_query():
-    data       = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True) or {}
     user_query = (data.get("query") or "").strip()
     if not user_query:
         return jsonify({"error": "No query provided"}), 400
 
-    resp = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {
-              "role":    "system",
-              "content": (
-                "Turn the user's music query into a few relevant genre-style tags. "
-                "Respond with comma-separated tags."
-              )
-            },
-            {"role": "user", "content": user_query}
-        ],
-        max_tokens=20,
-    )
-    tags = resp.choices[0].message.content.strip()
-    return jsonify({"tags": tags})
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {
+                  "role":    "system",
+                  "content": (
+                    "Turn the user's music query into a few relevant genre-style tags. "
+                    "Respond with comma-separated tags."
+                  )
+                },
+                {"role": "user", "content": user_query}
+            ],
+            max_tokens=20,
+        )
+        tags = resp.choices[0].message.content.strip()
+        return jsonify({"tags": tags})
+    except Exception as e:
+        app.logger.error("Error in /ai-query: %s", e)
+        return jsonify({"error": str(e)}), 500
 
-# ─── Search Endpoint ────────────────────────────────────────────────────────────
+# ─── Radio Browser search proxy ────────────────────────────────────────────────
 @app.route("/search", methods=["POST", "OPTIONS"])
 def search():
-    # JSON body (or empty dict)
     data = request.get_json(silent=True) or {}
 
-    # Top-stations shortcut?
+    # If top‐stations request
     if data.get("top"):
         url = "http://all.api.radio-browser.info/json/stations/topclick"
         params = {
@@ -72,9 +74,9 @@ def search():
             "hidebroken": "true"
         }
     else:
-        # Full-text or tag search
+        # Standard search
         query       = data.get("query", "")
-        field       = data.get("field", "name")    # name or tag
+        field       = data.get("field", "name")      # "name" or "tag"
         sort_by     = data.get("sort_by", "votes")
         filter_dead = bool(data.get("filter_dead", False))
 
@@ -93,7 +95,7 @@ def search():
         resp.raise_for_status()
         stations = resp.json()
     except Exception as e:
-        app.logger.error("Error in /search: %s", e)
+        app.logger.error("Error in /search fetch: %s", e)
         return jsonify([]), 500
 
     return jsonify(stations)
