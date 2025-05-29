@@ -49,16 +49,15 @@ def search():
 
 @app.route("/ai-query", methods=["POST"])
 def ai_query():
-    # … your existing OpenAI logic here …
-    # return jsonify({"tags": "..."})
-
-
-# … your existing imports, app setup, /countries and /search routes …
+    # ─── Stubbed AI logic ─────────────────────────────────────────────────────
+    # TODO: Replace this stub with your OpenAI call & parsing logic.
+    # For now we just return an empty tag list so the app falls back to name searches.
+    return jsonify({"tags": ""})
 
 @app.route("/proxy")
 def proxy():
     """
-    A simple example proxy endpoint. 
+    A simple example proxy endpoint.
     Pulls the `url` query-param from the client,
     fetches it server-side, and streams it back.
     """
@@ -66,19 +65,20 @@ def proxy():
     if not url:
         return jsonify({"error": "no url specified"}), 400
 
-    # fetch the target
     try:
         upstream = requests.get(url, stream=True, timeout=5)
         upstream.raise_for_status()
     except Exception as e:
         return jsonify({"error": str(e)}), 502
 
-    # stream it back
     return Response(
         upstream.raw.read(),
         status=upstream.status_code,
-        headers={k: v for k, v in upstream.headers.items()
-                 if k.lower() in ("content-type", "content-length")}
+        headers={
+            k: v
+            for k, v in upstream.headers.items()
+            if k.lower() in ("content-type", "content-length")
+        },
     )
 
 if __name__ == "__main__":
