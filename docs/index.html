@@ -5,33 +5,30 @@
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>Smart Radio Search</title>
   <style>
-    body { margin:0; padding:1rem; font-family:sans-serif;
-           background:#b7b7b7; color:#111; transition:background .3s,color .3s; }
-    body.dark { background:#444; color:#eee; }
-    h1 { margin-top:0; }
-    #description { margin:0 0 1rem; }
+    body { margin:0; padding:1rem; font-family:sans-serif; background:#b7b7b7; color:#111; transition:background .3s,color .3s }
+    body.dark { background:#444; color:#eee }
+    h1 { margin-top:0 }
+    #description { margin:0 0 1rem }
     .controls { display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:1rem; }
-    .controls input { flex:1 1 200px; padding:.5rem; }
-    .controls select, .controls button { padding:.5rem 1rem; }
-    #results { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:1rem; }
-    .card { background:#fff; padding:1rem; border-radius:.5rem; box-shadow:0 2px 4px rgba(0,0,0,.1);
-            transition:background .3s,color .3s; display:flex; flex-direction:column; }
-    body.dark .card { background:#333; color:#eee; box-shadow:0 2px 4px rgba(0,0,0,.5); }
-    .card h3 { margin:0 0 .5rem; }
-    .card .meta { font-size:.9rem; margin:.25rem 0; }
-    .card audio { width:100%; margin:.5rem 0; }
-    .card .now-playing { font-style:italic; margin-bottom:.5rem; }
-    .tag { color:#06c; text-decoration:none; cursor:pointer; margin-right:.25rem; }
-    .tag:hover { text-decoration:underline; }
-    .loading { font-style:italic; }
-    .emoji { display:inline-block; height:1em!important; width:auto!important;
-             vertical-align:-.1em!important; margin:0 .1em .0 .05em!important; }
+    .controls input { flex:1 1 200px; padding:.5rem }
+    .controls select, .controls button { padding:.5rem 1rem }
+    #results { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:1rem }
+    .card { background:#fff; padding:1rem; border-radius:.5rem; box-shadow:0 2px 4px rgba(0,0,0,.1); transition:background .3s,color .3s; display:flex; flex-direction:column }
+    body.dark .card { background:#333; color:#eee; box-shadow:0 2px 4px rgba(0,0,0,.5) }
+    .card h3 { margin:0 0 .5rem }
+    .card .meta { font-size:.9rem; margin:.25rem 0 }
+    .card audio { width:100%; margin:.5rem 0 }
+    .card .now-playing { font-style:italic; margin-bottom:.5rem }
+    .tag { color:#06c; cursor:pointer; text-decoration:none; margin-right:.25rem }
+    .tag:hover { text-decoration:underline }
+    .loading { font-style:italic }
+    .emoji { display:inline-block; height:1em!important; width:auto!important; vertical-align:-.1em!important; margin:0 .1em .0 .05em!important }
   </style>
 </head>
 <body>
   <h1>Smart Radio Search</h1>
   <p id="description">
-    Discover, preview, and play streaming radio stations from around the world —
+    Discover, preview, and play streaming radio stations from around the world—
     with AI-powered genre tagging, live filtering, and one-at-a-time playback.
   </p>
 
@@ -64,129 +61,129 @@
       "r&b","indie","alternative","punk","latin"
     ];
 
-    const qEl = document.getElementById("query"),
+    const q = document.getElementById("query"),
           btn = document.getElementById("searchBtn"),
-          cFilter = document.getElementById("countryFilter"),
-          gFilter = document.getElementById("genreFilter"),
-          sFilter = document.getElementById("sortBy"),
-          aiEl   = document.getElementById("aiResult"),
-          out    = document.getElementById("results");
+          cF = document.getElementById("countryFilter"),
+          gF = document.getElementById("genreFilter"),
+          sF = document.getElementById("sortBy"),
+          ai = document.getElementById("aiResult"),
+          out = document.getElementById("results");
 
-    let allStations = [], currentAudio = null;
+    let stations = [], currentAudio;
 
-    function toggleDark(){ document.body.classList.toggle("dark"); }
-
+    function toggleDark(){ document.body.classList.toggle("dark") }
     function countryCodeToFlag(cc){
-      return cc? cc.toUpperCase().split("")
+      return cc ? cc.toUpperCase().split("")
         .map(c=>String.fromCodePoint(0x1F1E6 + c.charCodeAt(0)-65))
         .join("") : "";
     }
 
-    // populate static genres
+    // static genres
     COMMON_GENRES.sort().forEach(g=>{
-      const o = document.createElement("option");
-      o.value = g; o.textContent = g;
-      gFilter.appendChild(o);
+      const o=document.createElement("option");
+      o.value=g; o.textContent=g;
+      gF.appendChild(o);
     });
 
-    // wire controls
-    btn.onclick = ()=>runSearch({ top:false });
-    qEl.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); runSearch({ top:false }); }});
-    gFilter.onchange = ()=>{ qEl.value=""; aiEl.textContent=""; runSearch({ field:"tag", query:gFilter.value }); };
-    cFilter.onchange = ()=>runSearch({ top:false });
-    sFilter.onchange = ()=>renderStations(allStations);
+    // wire up
+    btn.onclick   = ()=>run({ top:true });
+    q.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); run({ top:false }); }});
+    gF.onchange   = ()=>{ q.value=""; ai.textContent=""; run({ field:"tag", query:gF.value }); };
+    cF.onchange   = ()=>run({ top:false });
+    sF.onchange   = ()=>render(stations);
 
     window.addEventListener("DOMContentLoaded",()=>{
-      initCountries();
-      runSearch({ top:true });
+      fetchCountries();
+      run({ top:true });
     });
 
-    // fetch full country list from proxy
-    async function initCountries(){
+    // 1) fetch full country list
+    async function fetchCountries(){
       try {
-        const resp = await fetch(API + "/countries");
-        const list = await resp.json();
+        const res = await fetch(API+"/countries");
+        if(!res.ok) throw "";
+        const list = await res.json();
+        if(!Array.isArray(list)) throw "";
         list.sort((a,b)=>a.name.localeCompare(b.name))
-            .forEach(c=>{
-          const o = document.createElement("option");
-          o.value = c.code.toLowerCase();
-          o.textContent = `${countryCodeToFlag(c.code)} ${c.name}`;
-          cFilter.appendChild(o);
-        });
-      } catch(e){
-        console.warn("Country fetch failed", e);
+          .forEach(c=>{
+            const o=document.createElement("option");
+            o.value=c.code.toLowerCase();
+            o.textContent=`${countryCodeToFlag(c.code)} ${c.name}`;
+            cF.appendChild(o);
+          });
+      } catch(err){
+        console.warn("Country fetch failed", err);
       }
     }
 
-    // main loader
-    async function runSearch(opts={}){
-      aiEl.textContent = "";
-      out.innerHTML = "<p class='loading'>Loading…</p>";
+    // 2) main search loader (top or query)
+    async function run(opts){
+      ai.textContent="";
+      out.innerHTML="<p class='loading'>Loading…</p>";
 
-      // AI‐refine if text present
-      if(qEl.value.trim() && opts.field!=="tag"){
+      // AI refine if text query
+      if(q.value.trim() && opts.field!=="tag"){
         try {
-          const r = await fetch(API+"/ai-query",{
-            method:"POST", headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({query:qEl.value.trim()})
+          const r = await fetch(API+"/ai-query", {
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({ query: q.value.trim() })
           });
-          const js = await r.json();
-          if(js.tags){
-            aiEl.innerHTML = `AI suggested tags: <strong>${js.tags}</strong>`;
-            opts = { field:"tag", query:js.tags };
+          const j = await r.json();
+          if(j.tags){
+            ai.innerHTML = `AI suggested tags: <strong>${j.tags}</strong>`;
+            opts = { field:"tag", query:j.tags };
           }
-        }catch{}
+        } catch{}
       }
 
-      // assemble payload
-      const payload = {
-        filter_dead: true,
-        sort_by: sFilter.value.split(":")[0],
+      // build payload
+      const pl = {
+        filter_dead:true,
+        sort_by: sF.value.split(":")[0],
         ...opts
       };
-      // include genre/country if no text
       if(!opts.top){
-        if(!payload.query && gFilter.value) {
-          payload.field="tag"; payload.query=gFilter.value;
-        }
-        if(cFilter.value) payload.countrycode=cFilter.value;
+        if(!pl.query && gF.value){ pl.field="tag"; pl.query=gF.value; }
+        if(cF.value)      { pl.countrycode = cF.value; }
       }
 
+      // POST to /search
       try {
         const r = await fetch(API+"/search",{
-          method:"POST", headers:{"Content-Type":"application/json"},
-          body:JSON.stringify(payload)
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify(pl)
         });
         if(!r.ok) throw "";
-        allStations = await r.json();
-        renderStations(allStations);
+        stations = await r.json();
+        render(stations);
       } catch {
         out.innerHTML = "<p class='loading'>Failed to load stations.</p>";
       }
     }
 
-    // render cards
-    function renderStations(stations){
-      if(!stations.length){
+    // 3) render cards
+    function render(list){
+      if(!list.length){
         out.innerHTML="<p>No stations found.</p>";
         return;
       }
-      // sort
-      const [field,dir] = sFilter.value.split(":");
-      stations.sort((a,b)=>
-        dir==="asc"? a[field]-b[field] : b[field]-a[field]
-      );
+      const [f,d] = sF.value.split(":");
+      list.sort((a,b)=> d==="asc" ? a[f]-b[f] : b[f]-a[f]);
       out.innerHTML="";
-      stations.forEach((s,i)=>{
-        let url = (s.url_resolved||"").replace(/^http:/,"https:");
+      list.forEach((s,i)=>{
+        let url=(s.url_resolved||"").replace(/^http:/,"https:");
         if(!url.startsWith("https://")) return;
-        const flag = countryCodeToFlag(s.countrycode||"");
-        const tagsArr = (s.tags||"").split(",").map(t=>t.trim()).filter(Boolean);
-        const disp = tagsArr.slice(0,5).map(t=>`<a class="tag">${t}</a>`).join(", ");
-        const more = tagsArr.length>5? ", …": "";
-        const card = document.createElement("div");
+
+        const card=document.createElement("div");
         card.className="card";
-        card.innerHTML = `
+        const flag=countryCodeToFlag(s.countrycode||"");
+        const tagsArr=(s.tags||"").split(",").map(t=>t.trim()).filter(Boolean);
+        const disp=tagsArr.slice(0,5).map(t=>`<a class="tag">${t}</a>`).join(", ");
+        const more=tagsArr.length>5? ", …": "";
+
+        card.innerHTML=`
           <h3>#${i+1} ${s.name}</h3>
           <p class="meta">${flag} ${s.country||""}</p>
           <audio controls src="${url}"></audio>
@@ -196,10 +193,11 @@
           <p class="meta"><strong>Tags:</strong> ${disp||"—"}${more}</p>
         `;
         out.appendChild(card);
-        const audio = card.querySelector("audio");
-        audio.addEventListener("play", ()=>{ 
-          document.querySelectorAll("audio").forEach(a=>{ if(a!==audio) a.pause(); });
-          card.querySelector(".now-playing").textContent = `Now playing: ${s.name}`;
+
+        const a=card.querySelector("audio");
+        a.addEventListener("play",()=>{
+          document.querySelectorAll("audio").forEach(o=>{ if(o!==a) o.pause(); });
+          card.querySelector(".now-playing").textContent=`Now playing: ${s.name}`;
         });
       });
       twemoji.parse(document.body,{
