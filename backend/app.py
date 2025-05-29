@@ -5,17 +5,16 @@ import requests
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# ─── Load environment variables ────────────────────────────────────────────────
+# ─── Load environment ─────────────────────────────────────────────────────────
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
-    raise RuntimeError("Missing OPENAI_API_KEY in environment")
+    raise RuntimeError("Missing OPENAI_API_KEY")
 
-# ─── Initialize Flask & OpenAI client ─────────────────────────────────────────
+# ─── Flask & CORS setup ───────────────────────────────────────────────────────
 app = Flask(__name__)
 client = OpenAI(api_key=api_key)
 
-# ─── Enable CORS globally for your GitHub Pages origin ─────────────────────────
 CORS(
     app,
     resources={r"/*": {"origins": ["https://joewilcom.github.io"]}},
@@ -23,30 +22,24 @@ CORS(
     allow_headers=["Content-Type"]
 )
 
-# ─── Handle preflight OPTIONS requests ────────────────────────────────────────
 @app.before_request
 def handle_preflight():
     if request.method == "OPTIONS":
         resp = make_response()
-        resp.headers["Access-Control-Allow-Origin"] = "https://joewilcom.github.io"
+        resp.headers["Access-Control-Allow-Origin"]  = "https://joewilcom.github.io"
         resp.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return resp
 
-# ─── Health check ───────────────────────────────────────────────────────────────
+# ─── Health check ─────────────────────────────────────────────────────────────
 @app.route("/", methods=["GET", "OPTIONS"])
 def home():
     return "API is up"
 
-# ─── Proxy the Radio Browser country list ──────────────────────────────────────
+# ─── Countries proxy (HTTPS regional endpoint) ────────────────────────────────
 @app.route("/countries", methods=["GET", "OPTIONS"])
 def countries():
-    """
-    Proxy the Radio Browser country list over HTTPS so
-    we don’t run into mixed-content or blocked HTTP issues.
-    """
     try:
-        # use the HTTPS endpoint instead of HTTP
         resp = requests.get(
             "https://de1.api.radio-browser.info/json/countries",
             timeout=5
@@ -55,30 +48,24 @@ def countries():
         return jsonify(resp.json())
     except Exception as e:
         app.logger.error("Countries proxy error: %s", e)
-        # return an empty array so the frontend fails gracefully
+        # Return empty array so front-end won’t crash
         return jsonify([]), 200
 
-
-# ─── AI tag refinement endpoint ───────────────────────────────────────────────
+# ─── AI tag refinement ─────────────────────────────────────────────────────────
 @app.route("/ai-query", methods=["POST", "OPTIONS"])
 def ai_query():
     data = request.get_json(silent=True) or {}
     q = (data.get("query") or "").strip()
     if not q:
         return jsonify({"error": "No query provided"}), 400
-
     try:
         result = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Turn the user's music query into a few relevant genre tags, "
-                        "comma-separated."
-                    )
-                },
-                {"role": "user", "content": q}
+                {"role":"system","content":(
+                    "Turn the user's music query into a few relevant genre tags, comma-separated."
+                )},
+                {"role":"user","content": q}
             ],
             max_tokens=20
         )
@@ -88,22 +75,15 @@ def ai_query():
         app.logger.error("AI error: %s", e)
         return jsonify({"error": str(e)}), 500
 
-# ─── Search proxy endpoint ────────────────────────────────────────────────────
+# ─── Station search (and top-stations via POST) ────────────────────────────────
 @app.route("/search", methods=["POST", "OPTIONS"])
 def search():
     data = request.get_json(silent=True) or {}
 
-    # Top‐stations shortcut
     if data.get("top"):
         url = "http://all.api.radio-browser.info/json/stations/topclick"
-        params = {
-            "order":      "clickcount",
-            "reverse":    "true",
-            "limit":      10,
-            "hidebroken": "true"
-        }
+        params = {"order":"clickcount","reverse":"true","limit":10,"hidebroken":"true"}
     else:
-        # Full-text or tag search
         q           = data.get("query", "")
         field       = data.get("field", "name")
         sort_by     = data.get("sort_by", "votes")
@@ -122,13 +102,12 @@ def search():
     try:
         resp = requests.get(url, params=params, timeout=5)
         resp.raise_for_status()
-        stations = resp.json()
-        return jsonify(stations)
+        return jsonify(resp.json())
     except Exception as e:
         app.logger.error("Search error: %s", e)
         return jsonify([]), 500
 
-# ─── Run the app ───────────────────────────────────────────────────────────────
+# ─── Run ───────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)

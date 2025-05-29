@@ -28,7 +28,7 @@
 <body>
   <h1>Smart Radio Search</h1>
   <p id="description">
-    Discover, preview, and play streaming radio stations from around the world—
+    Discover, preview, and play streaming radio stations from around the world —
     with AI-powered genre tagging, live filtering, and one-at-a-time playback.
   </p>
 
@@ -53,136 +53,143 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js"></script>
   <script>
-    const API = "https://simple-naomi-joewilcom-71ae2211.koyeb.app";
-    const COMMON_GENRES = [
-      "pop","rock","jazz","classical","hip hop",
-      "electronic","dance","country","blues","reggae",
-      "metal","folk","soul","funk","disco",
-      "r&b","indie","alternative","punk","latin"
-    ];
+    const API          = "https://simple-naomi-joewilcom-71ae2211.koyeb.app";
+    const COMMON_GENRES = ["pop","rock","jazz","classical","hip hop","electronic","dance","country","blues","reggae","metal","folk","soul","funk","disco","r&b","indie","alternative","punk","latin"];
 
-    const q = document.getElementById("query"),
-          btn = document.getElementById("searchBtn"),
-          cF = document.getElementById("countryFilter"),
-          gF = document.getElementById("genreFilter"),
-          sF = document.getElementById("sortBy"),
-          ai = document.getElementById("aiResult"),
-          out = document.getElementById("results");
+    const qEl  = document.getElementById("query"),
+          btn  = document.getElementById("searchBtn"),
+          cF   = document.getElementById("countryFilter"),
+          gF   = document.getElementById("genreFilter"),
+          sF   = document.getElementById("sortBy"),
+          aiEl = document.getElementById("aiResult"),
+          out  = document.getElementById("results");
 
     let stations = [], currentAudio;
 
-    function toggleDark(){ document.body.classList.toggle("dark") }
-    function countryCodeToFlag(cc){
-      return cc ? cc.toUpperCase().split("")
-        .map(c=>String.fromCodePoint(0x1F1E6 + c.charCodeAt(0)-65))
-        .join("") : "";
+    function toggleDark() { document.body.classList.toggle("dark"); }
+    function countryCodeToFlag(cc) {
+      return cc
+        ? cc.toUpperCase().split("").map(c=>
+            String.fromCodePoint(0x1F1E6 + c.charCodeAt(0)-65)
+          ).join("")
+        : "";
     }
 
-    // static genres
+    // Static genre list
     COMMON_GENRES.sort().forEach(g=>{
-      const o=document.createElement("option");
+      const o = document.createElement("option");
       o.value=g; o.textContent=g;
       gF.appendChild(o);
     });
 
-    // wire up
-    btn.onclick   = ()=>run({ top:true });
-    q.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); run({ top:false }); }});
-    gF.onchange   = ()=>{ q.value=""; ai.textContent=""; run({ field:"tag", query:gF.value }); };
-    cF.onchange   = ()=>run({ top:false });
-    sF.onchange   = ()=>render(stations);
+    // Event wiring
+    btn.onclick   = ()=>runSearch({ top:true });
+    qEl.addEventListener("keydown", e=>{
+      if(e.key==="Enter"){ e.preventDefault(); runSearch({ top:false }); }
+    });
+    gF.onchange   = ()=>{ qEl.value=""; aiEl.textContent=""; runSearch({ field:"tag", query:gF.value }); };
+    cF.onchange   = ()=>runSearch({ top:false });
+    sF.onchange   = ()=>renderStations(stations);
 
-    window.addEventListener("DOMContentLoaded",()=>{
+    window.addEventListener("DOMContentLoaded", ()=>{
       fetchCountries();
-      run({ top:true });
+      runSearch({ top:true });
     });
 
-    // 1) fetch full country list
+    // Fetch full country list
     async function fetchCountries(){
       try {
-        const res = await fetch(API+"/countries");
+        const res = await fetch(API + "/countries");
         if(!res.ok) throw "";
         const list = await res.json();
         if(!Array.isArray(list)) throw "";
-        list.sort((a,b)=>a.name.localeCompare(b.name))
+        list
+          .filter(c=>c && typeof c.code==="string" && typeof c.name==="string")
+          .sort((a,b)=>a.name.localeCompare(b.name))
           .forEach(c=>{
-            const o=document.createElement("option");
-            o.value=c.code.toLowerCase();
-            o.textContent=`${countryCodeToFlag(c.code)} ${c.name}`;
+            const o = document.createElement("option");
+            o.value = c.code.toLowerCase();
+            o.textContent = `${countryCodeToFlag(c.code)} ${c.name}`;
             cF.appendChild(o);
           });
-      } catch(err){
-        console.warn("Country fetch failed", err);
+      } catch(e) {
+        console.warn("Country fetch failed", e);
       }
     }
 
-    // 2) main search loader (top or query)
-    async function run(opts){
-      ai.textContent="";
-      out.innerHTML="<p class='loading'>Loading…</p>";
+    // Main search loader
+    async function runSearch(opts){
+      aiEl.textContent = "";
+      out.innerHTML = "<p class='loading'>Loading…</p>";
 
-      // AI refine if text query
-      if(q.value.trim() && opts.field!=="tag"){
+      // AI refine if there's text
+      if(qEl.value.trim() && opts.field!=="tag"){
         try {
           const r = await fetch(API+"/ai-query", {
             method:"POST",
             headers:{"Content-Type":"application/json"},
-            body: JSON.stringify({ query: q.value.trim() })
+            body:JSON.stringify({query:qEl.value.trim()})
           });
-          const j = await r.json();
-          if(j.tags){
-            ai.innerHTML = `AI suggested tags: <strong>${j.tags}</strong>`;
-            opts = { field:"tag", query:j.tags };
+          const js = await r.json();
+          if(js.tags){
+            aiEl.innerHTML = `AI suggested tags: <strong>${js.tags}</strong>`;
+            opts = { field:"tag", query:js.tags };
           }
-        } catch{}
+        } catch {}
       }
 
-      // build payload
-      const pl = {
+      // Build payload
+      const payload = {
         filter_dead:true,
         sort_by: sF.value.split(":")[0],
         ...opts
       };
       if(!opts.top){
-        if(!pl.query && gF.value){ pl.field="tag"; pl.query=gF.value; }
-        if(cF.value)      { pl.countrycode = cF.value; }
+        if(!payload.query && gF.value){
+          payload.field="tag";
+          payload.query=gF.value;
+        }
+        if(cF.value){
+          payload.countrycode = cF.value;
+        }
       }
 
       // POST to /search
       try {
-        const r = await fetch(API+"/search",{
+        const r = await fetch(API+"/search", {
           method:"POST",
           headers:{"Content-Type":"application/json"},
-          body: JSON.stringify(pl)
+          body:JSON.stringify(payload)
         });
         if(!r.ok) throw "";
         stations = await r.json();
-        render(stations);
+        renderStations(stations);
       } catch {
         out.innerHTML = "<p class='loading'>Failed to load stations.</p>";
       }
     }
 
-    // 3) render cards
-    function render(list){
+    // Render station cards
+    function renderStations(list){
       if(!list.length){
-        out.innerHTML="<p>No stations found.</p>";
+        out.innerHTML = "<p>No stations found.</p>";
         return;
       }
+      // Sort
       const [f,d] = sF.value.split(":");
-      list.sort((a,b)=> d==="asc" ? a[f]-b[f] : b[f]-a[f]);
-      out.innerHTML="";
+      list.sort((a,b)=> d==="asc"? a[f]-b[f] : b[f]-a[f]);
+      out.innerHTML = "";
       list.forEach((s,i)=>{
-        let url=(s.url_resolved||"").replace(/^http:/,"https:");
+        let url = (s.url_resolved||"").replace(/^http:/,"https:");
         if(!url.startsWith("https://")) return;
 
-        const card=document.createElement("div");
-        card.className="card";
-        const flag=countryCodeToFlag(s.countrycode||"");
-        const tagsArr=(s.tags||"").split(",").map(t=>t.trim()).filter(Boolean);
-        const disp=tagsArr.slice(0,5).map(t=>`<a class="tag">${t}</a>`).join(", ");
-        const more=tagsArr.length>5? ", …": "";
+        const flag = countryCodeToFlag(s.countrycode||"");
+        const tagsArr = (s.tags||"").split(",").map(t=>t.trim()).filter(Boolean);
+        const disp = tagsArr.slice(0,5).map(t=>`<a class="tag">${t}</a>`).join(", ");
+        const more = tagsArr.length>5? ", …" : "";
 
+        const card = document.createElement("div");
+        card.className="card";
         card.innerHTML=`
           <h3>#${i+1} ${s.name}</h3>
           <p class="meta">${flag} ${s.country||""}</p>
@@ -194,15 +201,18 @@
         `;
         out.appendChild(card);
 
-        const a=card.querySelector("audio");
-        a.addEventListener("play",()=>{
+        const a = card.querySelector("audio");
+        a.addEventListener("play", ()=>{
           document.querySelectorAll("audio").forEach(o=>{ if(o!==a) o.pause(); });
-          card.querySelector(".now-playing").textContent=`Now playing: ${s.name}`;
+          card.querySelector(".now-playing").textContent = `Now playing: ${s.name}`;
         });
       });
-      twemoji.parse(document.body,{
-        base:"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/",
-        folder:"svg", ext:".svg"
+
+      // Render flags via Twemoji
+      twemoji.parse(document.body, {
+        base:   "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/",
+        folder: "svg",
+        ext:    ".svg"
       });
     }
   </script>
