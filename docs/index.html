@@ -206,7 +206,6 @@
       await runSearch({ top: true });
     });
 
-    // fill static genres
     function populateGenres(){
       COMMON_GENRES.sort().forEach(g=>{
         const o = document.createElement('option');
@@ -216,7 +215,6 @@
       });
     }
 
-    // fetch full country list
     async function fetchCountries(){
       try {
         const res = await fetch(`${API_BASE}/countries`);
@@ -232,22 +230,22 @@
       }
     }
 
-    // ─── Two-step runSearch: name + AI tags, then fallback ────────────────────
+    // ─── runSearch with 2️⃣-step + multi-word fallback ─────────────────────────
     async function runSearch(opts = {}) {
       aiResultEl.textContent = '';
       stationsDiv.innerHTML = '<p>Loading…</p>';
 
-      // base payload + any opts (e.g. {top:true})
+      // build base payload
       let payload = { filter_dead: true, sort_by: sortSel.value, ...opts };
       let stations = [];
 
       if (!opts.top) {
         const text = searchInput.value.trim();
         if (text) {
-          // 1) Always include raw text as name
+          // 1) always do a name search
           payload.name = text;
 
-          // 2) Then try AI tags
+          // 2) ask AI for tags
           try {
             const r = await fetch(`${API_BASE}/ai-query`, {
               method:'POST',
@@ -265,60 +263,82 @@
           }
         }
 
-        // if still no name but a genre is selected
+        // genre
         if (!payload.name && genreSel.value) {
           payload.tagList = genreSel.value;
         }
-
-        // country filter
+        // country
         if (countrySel.value) {
           payload.countrycode = countrySel.value;
         }
       }
 
-      // First try (with tagList if set)
+      // first attempt
       try {
-        const r1 = await fetch(`${API_BASE}/search`, {
+        const r = await fetch(`${API_BASE}/search`, {
           method:'POST',
           headers:{ 'Content-Type':'application/json' },
           body: JSON.stringify(payload)
         });
-        stations = await r1.json();
+        stations = await r.json();
       } catch(e){
         console.error('primary search failed', e);
       }
 
-      // Fallback: if zero results and we used AI tags, strip tagList and retry by name
-      if ((!stations || stations.length === 0) && payload.tagList && payload.name) {
-        console.info('No AI-tagged results, retrying name-only search');
-        delete payload.tagList;
-        try {
-          const r2 = await fetch(`${API_BASE}/search`, {
-            method:'POST',
-            headers:{ 'Content-Type':'application/json' },
-            body: JSON.stringify(payload)
-          });
-          stations = await r2.json();
-        } catch(e){
-          console.error('fallback name-only search failed', e);
+      // ─── ZERO-RESULT FALLBACKS ────────────────────────────────────────────────
+      if ((!stations || stations.length === 0) && !opts.top) {
+        // A) if we used AI tags, retry with name-only
+        if (payload.tagList && payload.name) {
+          console.info('No AI-tagged results, retrying name-only');
+          delete payload.tagList;
+          try {
+            const r2 = await fetch(`${API_BASE}/search`, {
+              method:'POST',
+              headers:{ 'Content-Type':'application/json' },
+              body: JSON.stringify(payload)
+            });
+            stations = await r2.json();
+          } catch(e){
+            console.error('fallback name-only failed', e);
+          }
+        }
+        // B) if still zero and the original query had >1 word, retry using those words as tags
+        if ((!stations || stations.length === 0) && payload.name && payload.name.includes(' ')) {
+          console.info('No name-only results, retrying keywords-as-tags');
+          const keywords = payload.name
+            .split(/\s+/)
+            .map(w=>w.toLowerCase())
+            .filter(Boolean);
+          delete payload.name;
+          payload.tagList = keywords.join(',');
+          aiResultEl.innerHTML =
+            'Fallback tags: <strong>'+keywords.join(', ')+'</strong>';
+          try {
+            const r3 = await fetch(`${API_BASE}/search`, {
+              method:'POST',
+              headers:{ 'Content-Type':'application/json' },
+              body: JSON.stringify(payload)
+            });
+            stations = await r3.json();
+          } catch(e){
+            console.error('fallback keywords-as-tags failed', e);
+          }
         }
       }
 
       renderStations(Array.isArray(stations) ? stations : []);
     }
 
-    // render
     function renderStations(list){
-      if(!list.length){
+      if (!list.length) {
         stationsDiv.innerHTML = '<p>No stations found.</p>';
         return;
       }
       stationsDiv.innerHTML = '';
-      list.forEach((st,i)=> createCard(st,i+1));
+      list.forEach((st,i)=> createCard(st, i+1));
     }
 
-    // create a card
-    function createCard(st,rank){
+    function createCard(st, rank){
       const card = document.createElement('div');
       card.className = 'station-card';
 
@@ -343,9 +363,9 @@
       // audio
       const audio = document.createElement('audio');
       audio.controls = true;
-      audio.src = st.url_resolved||st.url;
+      audio.src = st.url_resolved || st.url;
       audio.addEventListener('play', ()=>{
-        if(currentAudio && currentAudio!==audio) currentAudio.pause();
+        if (currentAudio && currentAudio !== audio) currentAudio.pause();
         currentAudio = audio;
       });
       card.append(audio);
@@ -364,7 +384,11 @@
       if (st.tags) {
         const tg = document.createElement('div');
         tg.className = 'tags';
-        const tags = st.tags.split(/,|\s+/).map(t=>t.trim()).filter(Boolean).slice(0,5);
+        const tags = st.tags
+          .split(/,|\s+/)
+          .map(t=>t.trim())
+          .filter(Boolean)
+          .slice(0,5);
         tg.innerHTML = 'Tags: ' + tags.map(t=>
           `<a href="#" data-tag="${t}">${t}</a>`
         ).join(', ') + (st.tags.split(',').length>5?' …':'');
