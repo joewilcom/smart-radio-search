@@ -3,29 +3,19 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-  <title>Smart Radio Search v1.2</title>
+  <title>Smart Radio Search v1.3</title>
   <script src="twemoji.min.js"></script>
   <style>
-    body {
-      background-color: #B7B7B7;
-      color: black;
-      font-family: sans-serif;
-      padding: 1rem;
-    }
-    .loading { font-style: italic; }
-    #results > div { margin-bottom: 1.5rem; }
-    input, select, button { margin-right: 0.5rem; }
+    body { background:#B7B7B7; color:#000; font-family:sans-serif; padding:1rem }
+    .loading { font-style:italic }
+    #results > div { margin-bottom:1.5rem }
+    input, select, button { margin-right:0.5rem }
   </style>
 </head>
 <body>
   <h1>Smart Radio Search v1.3</h1>
 
-  <input
-    id="query"
-    type="text"
-    placeholder="Search for genre, location, etc."
-    autofocus
-  />
+  <input id="query" placeholder="Search for genre, location, etc." autofocus>
   <select id="sortBy">
     <option value="votes">Votes</option>
     <option value="clickcount">Clicks</option>
@@ -39,81 +29,92 @@
 
   <script>
     async function search() {
+      const qEl = document.getElementById("query");
+      const sortBy = document.getElementById("sortBy").value || "votes";
       const resultsDiv  = document.getElementById("results");
       const aiResultDiv = document.getElementById("aiResult");
-      const query       = document.getElementById("query").value.trim();
-      const sortBy      = document.getElementById("sortBy").value || "votes";
+      const rawQuery    = qEl.value.trim();
+      if (!rawQuery) return;
 
-      if (!query) return;
-
-      let finalQuery  = query;
-      let field       = "name";
-      let refinedTags = "";
-
+      // 1) AI tag refinement
       resultsDiv.innerHTML  = "<p class='loading'>Thinking…</p>";
       aiResultDiv.innerHTML = "";
+      let finalQuery = rawQuery;
+      let field      = "name";
 
-      // 1) AI-assisted tag refinement
       try {
         const aiRes  = await fetch(
           "https://simple-naomi-joewilcom-71ae2211.koyeb.app/ai-query",
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query })
+            headers:{ "Content-Type":"application/json" },
+            body: JSON.stringify({ query: rawQuery })
           }
         );
         const aiJson = await aiRes.json();
         if (aiJson.tags) {
-          refinedTags = aiJson.tags.trim();
-          finalQuery  = refinedTags;
-          field       = "tag";
+          finalQuery = aiJson.tags.trim();
+          field      = "tag";
+          aiResultDiv.innerHTML =
+            `Showing results for: <strong>${finalQuery}</strong>`;
         }
-      } catch (err) {
-        console.warn("AI query failed:", err);
+      } catch (_) {
+        console.warn("AI query failed");
       }
 
-      if (refinedTags && refinedTags !== query) {
-        aiResultDiv.innerHTML =
-          `Showing results for: <strong>${refinedTags}</strong>`;
-      }
+      // 2) Split into search terms (space → name, comma → tag)
+      let terms = field === "tag"
+        ? finalQuery.split(",").map(s=>s.trim()).filter(Boolean)
+        : finalQuery.split(/\s+/).filter(Boolean);
 
-      // 2) Call /search
+      // 3) Fetch each term in parallel and union by stationuuid
+      let stations = [];
       try {
-        const res = await fetch(
-          "https://simple-naomi-joewilcom-71ae2211.koyeb.app/search",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              query:       finalQuery,
-              filter_dead: true,
-              sort_by:     sortBy,
-              field
-            })
-          }
-        );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const stations = await res.json();
-        renderStations(stations);
+        const all = await Promise.all(terms.map(term =>
+          fetch(
+            "https://simple-naomi-joewilcom-71ae2211.koyeb.app/search",
+            {
+              method: "POST",
+              headers:{ "Content-Type":"application/json" },
+              body: JSON.stringify({
+                query:       term,
+                filter_dead: true,
+                sort_by:     sortBy,
+                field
+              })
+            }
+          ).then(r=> r.ok ? r.json() : [])
+        ));
+        const seen = new Map();
+        all.flat().forEach(s => {
+          // dedupe by stationuuid or url_resolved fallback
+          const id = s.stationuuid || s.url_resolved;
+          if (!seen.has(id)) seen.set(id, s);
+        });
+        // convert Map → array, sort, limit
+        stations = Array.from(seen.values())
+                         .sort((a,b)=> (b[sortBy]||0)-(a[sortBy]||0))
+                         .slice(0, 50);
       } catch (err) {
-        console.error("Search fetch failed:", err);
+        console.error("Search fetch failed", err);
         resultsDiv.innerHTML =
           "<p>Failed to fetch stations. Please try again later.</p>";
+        return;
       }
+
+      renderStations(stations);
     }
 
     async function loadTopStations() {
       const resultsDiv = document.getElementById("results");
       resultsDiv.innerHTML =
         "<p class='loading'>Loading top stations…</p>";
-
       try {
         const res = await fetch(
           "https://simple-naomi-joewilcom-71ae2211.koyeb.app/search",
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers:{ "Content-Type":"application/json" },
             body: JSON.stringify({
               top:         true,
               filter_dead: true,
@@ -121,11 +122,10 @@
             })
           }
         );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const stations = await res.json();
         renderStations(stations);
-      } catch (err) {
-        console.error("Top station fetch failed:", err);
+      } catch (e) {
+        console.error("Top station fetch failed", e);
         resultsDiv.innerHTML =
           "<p>Failed to load top stations. Please try again later.</p>";
       }
@@ -134,22 +134,28 @@
     function renderStations(stations) {
       const resultsDiv = document.getElementById("results");
       resultsDiv.innerHTML = "";
-
       if (!stations.length) {
         resultsDiv.innerHTML =
           "<p>No stations found. Try a broader search.</p>";
         return;
       }
+      stations.forEach((st,i) => {
+        // avoid mixed-content by upgrading or skipping HTTP streams
+        let url = st.url_resolved || "";
+        if (url.startsWith("http://")) {
+          // try to upgrade; if server supports HTTPS this will work
+          url = url.replace(/^http:\/\//, "https://");
+        }
+        if (!url.startsWith("https://")) return;
 
-      stations.forEach((st, i) => {
         const div = document.createElement("div");
         div.innerHTML = `
-          <h3>#${i + 1} ${st.name}</h3>
-          <p>${st.country || ""}</p>
-          <audio controls src="${st.url_resolved}"></audio>
+          <h3>#${i+1} ${st.name}</h3>
+          <p>${st.country||""}</p>
+          <audio controls src="${url}"></audio>
           <p>
-            <strong>Bitrate:</strong> ${st.bitrate || "?"} kbps
-            | <strong>Votes:</strong> ${st.votes || 0}
+            <strong>Bitrate:</strong> ${st.bitrate||"?"} kbps
+            | <strong>Votes:</strong> ${st.votes||0}
           </p>
         `;
         resultsDiv.appendChild(div);
@@ -160,7 +166,7 @@
       const body = document.body;
       const dark = body.style.backgroundColor === "black";
       body.style.backgroundColor = dark ? "#B7B7B7" : "black";
-      body.style.color           = dark ? "black" : "white";
+      body.style.color           = dark ? "black"     : "white";
     }
 
     window.addEventListener("DOMContentLoaded", loadTopStations);
