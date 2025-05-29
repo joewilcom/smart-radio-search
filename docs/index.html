@@ -6,170 +6,233 @@
   <title>Smart Radio Search v1.3</title>
   <script src="twemoji.min.js"></script>
   <style>
-    body { background:#B7B7B7; color:#000; font-family:sans-serif; padding:1rem }
-    .loading { font-style:italic }
-    #results > div { margin-bottom:1.5rem }
-    input, select, button { margin-right:0.5rem }
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background-color: #f0f0f0;
+      color: #111;
+      padding: 1rem;
+      transition: background-color .3s, color .3s;
+    }
+    body.dark {
+      background-color: #222;
+      color: #eee;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+      margin-bottom: 1rem;
+    }
+    .controls input {
+      flex: 1 1 200px;
+      padding: .5rem;
+    }
+    .controls select,
+    .controls button {
+      padding: .5rem 1rem;
+    }
+
+    #results {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px,1fr));
+      gap: 1rem;
+    }
+
+    .card {
+      background-color: #fff;
+      border-radius: .5rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      transition: background-color .3s, color .3s;
+    }
+    body.dark .card {
+      background-color: #333;
+      color: #eee;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    }
+
+    .card h3 {
+      margin: 0 0 .5rem;
+      font-size: 1.1rem;
+    }
+    .card .meta {
+      font-size: .9rem;
+      margin: .25rem 0;
+    }
+    .card audio {
+      margin: .5rem 0;
+      width: 100%;
+    }
+    .loading {
+      font-style: italic;
+    }
   </style>
 </head>
 <body>
   <h1>Smart Radio Search v1.3</h1>
 
-  <input id="query" placeholder="Search for genre, location, etc." autofocus>
-  <select id="sortBy">
-    <option value="votes">Votes</option>
-    <option value="clickcount">Clicks</option>
-    <option value="bitrate">Bitrate</option>
-  </select>
-  <button onclick="search()">Search</button>
-  <button onclick="toggleDark()">Toggle Dark Mode</button>
+  <div class="controls">
+    <input id="query" placeholder="Search for genre, location, etc." />
+    <select id="sortBy">
+      <option value="votes">Votes</option>
+      <option value="clickcount">Clicks</option>
+      <option value="bitrate">Bitrate</option>
+    </select>
+    <button onclick="search()">Search</button>
+    <button onclick="toggleDark()">Toggle Dark Mode</button>
+  </div>
 
   <p id="aiResult"></p>
   <div id="results"></div>
 
   <script>
-    async function search() {
-      const qEl = document.getElementById("query");
-      const sortBy = document.getElementById("sortBy").value || "votes";
-      const resultsDiv  = document.getElementById("results");
-      const aiResultDiv = document.getElementById("aiResult");
-      const rawQuery    = qEl.value.trim();
-      if (!rawQuery) return;
-
-      // 1) AI tag refinement
-      resultsDiv.innerHTML  = "<p class='loading'>Thinking…</p>";
-      aiResultDiv.innerHTML = "";
-      let finalQuery = rawQuery;
-      let field      = "name";
-
-      try {
-        const aiRes  = await fetch(
-          "https://simple-naomi-joewilcom-71ae2211.koyeb.app/ai-query",
-          {
-            method: "POST",
-            headers:{ "Content-Type":"application/json" },
-            body: JSON.stringify({ query: rawQuery })
-          }
-        );
-        const aiJson = await aiRes.json();
-        if (aiJson.tags) {
-          finalQuery = aiJson.tags.trim();
-          field      = "tag";
-          aiResultDiv.innerHTML =
-            `Showing results for: <strong>${finalQuery}</strong>`;
-        }
-      } catch (_) {
-        console.warn("AI query failed");
-      }
-
-      // 2) Split into search terms (space → name, comma → tag)
-      let terms = field === "tag"
-        ? finalQuery.split(",").map(s=>s.trim()).filter(Boolean)
-        : finalQuery.split(/\s+/).filter(Boolean);
-
-      // 3) Fetch each term in parallel and union by stationuuid
-      let stations = [];
-      try {
-        const all = await Promise.all(terms.map(term =>
-          fetch(
-            "https://simple-naomi-joewilcom-71ae2211.koyeb.app/search",
-            {
-              method: "POST",
-              headers:{ "Content-Type":"application/json" },
-              body: JSON.stringify({
-                query:       term,
-                filter_dead: true,
-                sort_by:     sortBy,
-                field
-              })
-            }
-          ).then(r=> r.ok ? r.json() : [])
-        ));
-        const seen = new Map();
-        all.flat().forEach(s => {
-          // dedupe by stationuuid or url_resolved fallback
-          const id = s.stationuuid || s.url_resolved;
-          if (!seen.has(id)) seen.set(id, s);
-        });
-        // convert Map → array, sort, limit
-        stations = Array.from(seen.values())
-                         .sort((a,b)=> (b[sortBy]||0)-(a[sortBy]||0))
-                         .slice(0, 50);
-      } catch (err) {
-        console.error("Search fetch failed", err);
-        resultsDiv.innerHTML =
-          "<p>Failed to fetch stations. Please try again later.</p>";
-        return;
-      }
-
-      renderStations(stations);
+    // Switch dark/light mode by toggling a class
+    function toggleDark() {
+      document.body.classList.toggle("dark");
     }
 
+    // Run on page load
+    window.addEventListener("DOMContentLoaded", loadTopStations);
+
+    // Load top 10 by clicks initially
     async function loadTopStations() {
-      const resultsDiv = document.getElementById("results");
-      resultsDiv.innerHTML =
-        "<p class='loading'>Loading top stations…</p>";
+      const results = document.getElementById("results");
+      results.innerHTML = "<p class='loading'>Loading top stations…</p>";
+
       try {
         const res = await fetch(
           "https://simple-naomi-joewilcom-71ae2211.koyeb.app/search",
           {
             method: "POST",
-            headers:{ "Content-Type":"application/json" },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              top:         true,
+              top: true,
               filter_dead: true,
-              sort_by:     "clickcount"
+              sort_by: "clickcount"
             })
           }
         );
         const stations = await res.json();
+        // Sort descending by votes for consistency
+        stations.sort((a, b) => (b.votes||0) - (a.votes||0));
         renderStations(stations);
-      } catch (e) {
-        console.error("Top station fetch failed", e);
-        resultsDiv.innerHTML =
-          "<p>Failed to load top stations. Please try again later.</p>";
+      } catch {
+        results.innerHTML =
+          "<p class='loading'>Failed to load top stations.</p>";
       }
     }
 
+    // Main search flow
+    async function search() {
+      const raw = document.getElementById("query").value.trim();
+      const sortBy = document.getElementById("sortBy").value;
+      const aiResEl = document.getElementById("aiResult");
+      const results = document.getElementById("results");
+      if (!raw) return;
+
+      results.innerHTML = "<p class='loading'>Thinking…</p>";
+      aiResEl.textContent = "";
+
+      let finalQuery = raw;
+      let field = "name";
+
+      // 1) AI‐powered tag refinement
+      try {
+        const ai = await fetch(
+          "https://simple-naomi-joewilcom-71ae2211.koyeb.app/ai-query",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: raw })
+          }
+        );
+        const { tags } = await ai.json();
+        if (tags) {
+          finalQuery = tags;
+          field = "tag";
+          aiResEl.innerHTML =
+            `Showing results for: <strong>${tags}</strong>`;
+        }
+      } catch {
+        console.warn("AI refinement failed");
+      }
+
+      // 2) Support multi‐term: split on commas (tags) or spaces (names)
+      const terms = field === "tag"
+        ? finalQuery.split(",").map(s => s.trim()).filter(Boolean)
+        : finalQuery.split(/\s+/).filter(Boolean);
+
+      // 3) Fetch each term, dedupe & merge
+      let merged = new Map();
+      try {
+        const all = await Promise.all(
+          terms.map(term =>
+            fetch(
+              "https://simple-naomi-joewilcom-71ae2211.koyeb.app/search",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ query: term, filter_dead: true, sort_by: sortBy, field })
+              }
+            ).then(r => (r.ok ? r.json() : []))
+          )
+        );
+        all.flat().forEach(s => {
+          const key = s.stationuuid || s.url_resolved;
+          if (!merged.has(key)) merged.set(key, s);
+        });
+      } catch {
+        results.innerHTML =
+          "<p class='loading'>Failed to fetch stations.</p>";
+        return;
+      }
+
+      // Turn merged Map → Array, sort by votes desc, limit to 50
+      const stations = Array.from(merged.values())
+        .sort((a, b) => (b.votes||0) - (a.votes||0))
+        .slice(0, 50);
+
+      renderStations(stations);
+    }
+
+    // Build the grid of cards
     function renderStations(stations) {
-      const resultsDiv = document.getElementById("results");
-      resultsDiv.innerHTML = "";
+      const results = document.getElementById("results");
+      results.innerHTML = "";
       if (!stations.length) {
-        resultsDiv.innerHTML =
+        results.innerHTML =
           "<p>No stations found. Try a broader search.</p>";
         return;
       }
-      stations.forEach((st,i) => {
-        // avoid mixed-content by upgrading or skipping HTTP streams
-        let url = st.url_resolved || "";
-        if (url.startsWith("http://")) {
-          // try to upgrade; if server supports HTTPS this will work
-          url = url.replace(/^http:\/\//, "https://");
-        }
+
+      stations.forEach((st, i) => {
+        // Attempt to upgrade http→https or skip
+        let url = (st.url_resolved || "");
+        if (url.startsWith("http://")) url = url.replace("http://", "https://");
         if (!url.startsWith("https://")) return;
 
-        const div = document.createElement("div");
-        div.innerHTML = `
-          <h3>#${i+1} ${st.name}</h3>
-          <p>${st.country||""}</p>
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+          <h3>#${i + 1} ${st.name}</h3>
+          <p class="meta">${st.country || "Unknown country"}</p>
           <audio controls src="${url}"></audio>
-          <p>
-            <strong>Bitrate:</strong> ${st.bitrate||"?"} kbps
-            | <strong>Votes:</strong> ${st.votes||0}
+          <p class="meta">
+            <strong>Clicks:</strong> ${st.clickcount || 0}
+            | <strong>Votes:</strong> ${st.votes || 0}
           </p>
+          <p class="meta">
+            <strong>Bitrate:</strong> ${st.bitrate || "?"} kbps
+            | <strong>Codec:</strong> ${st.codec || "n/a"}
+          </p>
+          <p class="meta"><strong>Tags:</strong> ${st.tags || "—"}</p>
         `;
-        resultsDiv.appendChild(div);
+        results.appendChild(card);
       });
     }
-
-    function toggleDark() {
-      const body = document.body;
-      const dark = body.style.backgroundColor === "black";
-      body.style.backgroundColor = dark ? "#B7B7B7" : "black";
-      body.style.color           = dark ? "black"     : "white";
-    }
-
-    window.addEventListener("DOMContentLoaded", loadTopStations);
   </script>
 </body>
 </html>
