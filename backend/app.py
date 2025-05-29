@@ -53,30 +53,32 @@ def ai_query():
     # return jsonify({"tags": "..."})
 
 
+# … your existing imports, app setup, /countries and /search routes …
+
 @app.route("/proxy")
 def proxy():
     """
-    Proxy any audio URL (even if HTTP-only) through our HTTPS Flask domain
-    so the browser never sees mixed-content.
+    A simple example proxy endpoint. 
+    Pulls the `url` query-param from the client,
+    fetches it server-side, and streams it back.
     """
-    upstream_url = request.args.get("url")
-    if not upstream_url:
-        return ("Missing ?url=", 400)
+    url = request.args.get("url")
+    if not url:
+        return jsonify({"error": "no url specified"}), 400
 
+    # fetch the target
     try:
-        upstream = requests.get(upstream_url, stream=True, timeout=10)
+        upstream = requests.get(url, stream=True, timeout=5)
         upstream.raise_for_status()
     except Exception as e:
-        return (f"Upstream fetch failed: {e}", 502)
+        return jsonify({"error": str(e)}), 502
 
-    def generate():
-        for chunk in upstream.iter_content(chunk_size=4096):
-            if chunk:
-                yield chunk
-
+    # stream it back
     return Response(
-        stream_with_context(generate()),
-        content_type=upstream.headers.get("content-type", "audio/mpeg")
+        upstream.raw.read(),
+        status=upstream.status_code,
+        headers={k: v for k, v in upstream.headers.items()
+                 if k.lower() in ("content-type", "content-length")}
     )
 
 if __name__ == "__main__":
