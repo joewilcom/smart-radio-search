@@ -2,152 +2,178 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Smart Radio Search</title>
+
   <style>
-    body { font-family: sans-serif; background: #ccc; color: #111; padding: 1rem; }
-    .controls > * { margin-right: .5rem; }
-    .station { background: #fff; padding: .75rem; margin: .5rem 0; border-radius: .5rem; }
-    .station h2 { margin: 0 0 .5rem; }
-    audio { width: 100%; margin: .5rem 0; }
+    /* -------------------
+       Global resets & vars
+       ------------------- */
+    :root {
+      --bg: #b7b7b7;
+      --fg: #111;
+      --card-bg: #fff;
+      --link: #0366d6;
+    }
+    [data-theme="dark"] {
+      --bg: #222;
+      --fg: #eee;
+      --card-bg: #333;
+      --link: #58a6ff;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.5;
+    }
+
+    /*  Header & controls  */
+    header {
+      padding: 1rem;
+    }
+    header h1 {
+      font-size: 2rem;
+      margin-bottom: 0.25rem;
+    }
+    header .description {
+      margin-bottom: 1rem;
+      font-size: 0.95rem;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .controls input,
+    .controls select,
+    .controls button {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.95rem;
+      border: 1px solid #aaa;
+      border-radius: 4px;
+    }
+    .controls button {
+      cursor: pointer;
+    }
+
+    /*  Stations grid  */
+    #stations {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px,1fr));
+      gap: 1rem;
+      padding: 0 1rem 1rem;
+    }
+
+    /*  Individual “card”  */
+    .station-card {
+      background: var(--card-bg);
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .station-card h2 {
+      font-size: 1.25rem;
+      margin-bottom: 0.5rem;
+    }
+
+    /* flag + country line */
+    .station-card .country {
+      display: flex;
+      align-items: center;
+      font-size: 0.9rem;
+      margin-bottom: 0.75rem;
+    }
+    .station-card .country img.flag {
+      width: 1em;
+      height: auto;
+      margin-right: 0.5em;
+      display: inline-block;
+    }
+
+    /* audio player */
+    .station-card audio {
+      width: 100%;
+      margin-bottom: 0.75rem;
+    }
+
+    /* stats & “now playing” */
+    .station-card .stats {
+      font-size: 0.9rem;
+      line-height: 1.4;
+      flex-grow: 1;
+    }
+    .station-card .stats em {
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+
+    /* tags line */
+    .station-card .tags {
+      margin-top: 0.5rem;
+      font-size: 0.9rem;
+    }
+    .station-card .tags a {
+      margin-right: 0.5em;
+      color: var(--link);
+      text-decoration: none;
+    }
+    .station-card .tags a:hover {
+      text-decoration: underline;
+    }
   </style>
+
+  <!-- your existing front-end logic -->
+  <script src="smart-radio-search.js" defer></script>
 </head>
-<body>
-  <h1>Smart Radio Search</h1>
-  <p>Discover, preview, and play streaming radio stations from around the world — with AI-powered genre tagging, live filtering, and one-at-a-time playback.</p>
+<body data-theme="light">
 
-  <div class="controls">
-    <input id="searchInput" placeholder="Search for genre, location, etc." size="30"/>
-    <button id="searchBtn">Search</button>
-    <select id="countrySelect"><option>All Countries</option></select>
-    <select id="genreSelect"><option>All Genres</option></select>
-    <select id="sortSelect">
-      <option value="votes">Votes ↓</option>
-      <option value="clickcount">Clicks ↓</option>
-      <option value="bitrate">Bitrate ↓</option>
-    </select>
-    <button id="darkToggle">Toggle Dark Mode</button>
-  </div>
+  <header>
+    <h1>Smart Radio Search</h1>
+    <p class="description">
+      Discover, preview, and play streaming radio stations from around the world —
+      with AI-powered genre tagging, live filtering, and one-at-a-time playback.
+    </p>
 
-  <div id="stations"></div>
+    <div class="controls">
+      <input id="search-input" placeholder="Search for genre, location, etc." />
+      <button id="search-button">Search</button>
 
-  <script>
-    const API_BASE = "https://simple-naomi-joewilcom-71ae2211.koyeb.app";
-    const COMMON_GENRES = [
-      "pop","rock","jazz","classical","hip hop","electronic",
-      "dance","country","blues","reggae","metal","folk",
-      "soul","funk","disco","r&b","indie","alternative",
-      "punk","latin"
-    ];
+      <select id="country-filter">
+        <option value="">All Countries</option>
+      </select>
 
-    async function init(){
-      populateGenres();
-      await Promise.all([fetchCountries(), loadStations({top:true})]);
-      document.getElementById("searchBtn").onclick = runSearch;
-      document.getElementById("searchInput")
-              .addEventListener("keypress", e=>{ if(e.key==="Enter") runSearch() });
-      ["countrySelect","genreSelect","sortSelect"].forEach(id=>
-        document.getElementById(id).onchange = runSearch
-      );
-    }
+      <select id="genre-filter">
+        <option value="">All Genres</option>
+      </select>
 
-    function populateGenres(){
-      let sel = document.getElementById("genreSelect");
-      COMMON_GENRES.forEach(g=>{
-        let o = document.createElement("option");
-        o.value = g; o.textContent = g;
-        sel.appendChild(o);
-      });
-    }
+      <select id="sort-filter">
+        <option value="votes">Votes ↓</option>
+        <option value="clicks">Clicks ↓</option>
+        <option value="bitrate">Bitrate ↓</option>
+      </select>
 
-    async function fetchCountries(){
-      try {
-        let res = await fetch(`${API_BASE}/countries`);
-        let list = await res.json();
-        let sel = document.getElementById("countrySelect");
-        list.forEach(c=>{
-          let o = document.createElement("option");
-          o.value = c.code;
-          o.textContent = `${c.code} ${c.name}`;
-          sel.appendChild(o);
-        });
-      }
-      catch(e){ console.warn("Country fetch failed", e); }
-    }
+      <button id="toggle-dark">Toggle Dark Mode</button>
+    </div>
+  </header>
 
-    async function loadStations(opts){
-      const wrap = document.getElementById("stations");
-      wrap.innerHTML = "<p>Loading…</p>";
-      try {
-        let res = await fetch(`${API_BASE}/search`, {
-          method: "POST",
-          headers:{ "Content-Type":"application/json" },
-          body: JSON.stringify(opts)
-        });
-        let data = await res.json();
-        renderStations(data);
-      }
-      catch(err){
-        console.error(err);
-        wrap.innerHTML = "<p>Failed to load stations.</p>";
-      }
-    }
+  <main>
+    <div id="stations">
+      <!-- JS will inject cards here -->
+    </div>
+  </main>
 
-    function runSearch(){
-      const term = document.getElementById("searchInput").value.trim();
-      const country = document.getElementById("countrySelect").value;
-      const genre   = document.getElementById("genreSelect").value;
-      if(!term && country==="All Countries" && genre==="All Genres"){
-        return loadStations({top:true});
-      }
-      loadStations({
-        top:false,
-        name: term||undefined,
-        countrycode: country!=="All Countries"?country:undefined,
-        tagList: genre!=="All Genres"?genre:undefined
-      });
-    }
-
-    function renderStations(arr){
-      const wrap = document.getElementById("stations");
-      wrap.innerHTML = "";
-      if(!arr || arr.length===0){
-        wrap.innerHTML = "<p>No stations found. Try a broader search.</p>";
-        return;
-      }
-      // render each
-      arr.forEach((s,i)=>{
-        let div = document.createElement("div");
-        div.className = "station";
-        const tags = (s.tags||"")
-                      .split(",")
-                      .slice(0,5)
-                      .map(t=>`<a href="#" onclick="searchTag('${t}')">${t}</a>`)
-                      .join(", ")
-                  + ((s.tags||"").split(",").length>5 ? " …" : "");
-        div.innerHTML = `
-          <h2>#${i+1} ${s.name}</h2>
-          <p><span class="flag">${s.countrycode.toLowerCase()}</span> ${s.country}</p>
-          <audio src="${s.url}" controls preload="none"></audio>
-          <p><em>Now playing:</em> —</p>
-          <p>Clicks: ${s.clickcount} | Votes: ${s.votes}</p>
-          <p>Bitrate: ${s.bitrate} kbps | Codec: ${s.codec}</p>
-          <p>Tags: ${tags || "—"}</p>
-        `;
-        wrap.appendChild(div);
-      });
-      // ensure only one plays at a time
-      const audios = wrap.querySelectorAll("audio");
-      audios.forEach(a=>
-        a.addEventListener("play", ()=> audios.forEach(x=>{ if(x!==a) x.pause() }))
-      );
-    }
-
-    function searchTag(t){
-      document.getElementById("searchInput").value = t;
-      runSearch();
-    }
-
-    window.onload = init;
-  </script>
 </body>
 </html>
