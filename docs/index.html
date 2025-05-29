@@ -191,9 +191,9 @@
       document.body.dataset.theme =
         document.body.dataset.theme === 'light' ? 'dark' : 'light';
     });
-    searchBtn.addEventListener('click', () => runSearch());
+    searchBtn.addEventListener('click', runSearch);
     [countrySel, genreSel, sortSel].forEach(el =>
-      el.addEventListener('change', () => runSearch())
+      el.addEventListener('change', runSearch)
     );
     searchInput.addEventListener('keydown', e=>{
       if(e.key==='Enter') runSearch();
@@ -324,10 +324,15 @@
       ctr.append(document.createTextNode(st.country||''));
       card.append(ctr);
 
-      // audio
+      // ─── audio ───────────────────────────────────────────────
       const audio = document.createElement('audio');
       audio.controls = true;
-      audio.src = st.url_resolved || st.url;
+      // if it's an http:// stream, proxy it to avoid mixed-content
+      let src = st.url_resolved || st.url;
+      if (src && src.startsWith('http://')) {
+        src = `${API_BASE}/proxy?url=${encodeURIComponent(src)}`;
+      }
+      audio.src = src;
       audio.addEventListener('play', ()=>{
         if(currentAudio && currentAudio!==audio) currentAudio.pause();
         currentAudio = audio;

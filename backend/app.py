@@ -1,26 +1,14 @@
 import os
 import requests
-from flask import Flask, request, jsonify, make_response
+from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
-from openai import OpenAI
-from dotenv import load_dotenv
 
-# ─── Load env & init OpenAI ─────────────────────────────────────────────────
-load_dotenv()
-OPENAI_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_KEY:
-    raise RuntimeError("Missing OPENAI_API_KEY")
-
-client = OpenAI(api_key=OPENAI_KEY)
-
-# ─── Flask & CORS setup ───────────────────────────────────────────────────────
 app = Flask(__name__)
-# Allow your GitHub Pages origin (and local dev) to call any route:
-CORS(app, origins=["https://joewilcom.github.io", "http://localhost:5000"])
+# Allow only your GH Pages origin to talk to us
+CORS(app, origins=["https://joewilcom.github.io"])
 
 RADIO_API = "https://all.api.radio-browser.info/json"
 
-# ─── Countries ────────────────────────────────────────────────────────────────
 @app.route("/countries")
 def countries():
     resp = requests.get(f"{RADIO_API}/stations/topclick/100", timeout=5)
@@ -34,27 +22,23 @@ def countries():
     out = [{"code": c, "name": seen[c]} for c in sorted(seen, key=lambda k: seen[k])]
     return jsonify(out)
 
-# ─── Station Search / Top Stations ────────────────────────────────────────────
-@app.route("/search", methods=["POST", "OPTIONS"])
+@app.route("/search", methods=["POST"])
 def search():
-    if request.method == "OPTIONS":
-        return _build_cors_preflight_response()
-
-    data    = request.get_json() or {}
+    data = request.get_json() or {}
     top     = data.get("top", False)
     country = data.get("countrycode")
     genre   = data.get("tagList")
     name    = data.get("name")
 
     params = {"limit": 50}
-    if country:
+    if country and country != "ALL":
         params["countrycode"] = country
 
     if top:
         url = f"{RADIO_API}/stations/topclick/50"
     else:
         url = f"{RADIO_API}/stations/search"
-        if genre:
+        if genre and genre != "ALL":
             params["tagList"] = genre
         if name:
             params["name"] = name
@@ -63,43 +47,37 @@ def search():
     resp.raise_for_status()
     return jsonify(resp.json())
 
-# ─── AI Tag Refinement ────────────────────────────────────────────────────────
-@app.route("/ai-query", methods=["POST", "OPTIONS"])
+@app.route("/ai-query", methods=["POST"])
 def ai_query():
-    if request.method == "OPTIONS":
-        return _build_cors_preflight_response()
+    # … your existing OpenAI logic here …
+    # return jsonify({"tags": "..."})
 
-    data = request.get_json(silent=True) or {}
-    q = (data.get("query") or "").strip()
-    if not q:
-        return jsonify({"error": "No query provided"}), 400
+
+@app.route("/proxy")
+def proxy():
+    """
+    Proxy any audio URL (even if HTTP-only) through our HTTPS Flask domain
+    so the browser never sees mixed-content.
+    """
+    upstream_url = request.args.get("url")
+    if not upstream_url:
+        return ("Missing ?url=", 400)
 
     try:
-        result = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role":"system","content":(
-                    "Turn the user's music query into a few relevant genre tags, comma-separated."
-                )},
-                {"role":"user","content": q}
-            ],
-            max_tokens=20
-        )
-        tags = result.choices[0].message.content.strip()
-        return jsonify({"tags": tags})
+        upstream = requests.get(upstream_url, stream=True, timeout=10)
+        upstream.raise_for_status()
     except Exception as e:
-        app.logger.error("AI error: %s", e)
-        return jsonify({"error": "AI service failed"}), 500
+        return (f"Upstream fetch failed: {e}", 502)
 
-# ─── CORS Preflight Helper ────────────────────────────────────────────────────
-def _build_cors_preflight_response():
-    response = make_response()
-    response.headers["Access-Control-Allow-Origin"]  = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    return response
+    def generate():
+        for chunk in upstream.iter_content(chunk_size=4096):
+            if chunk:
+                yield chunk
 
-# ─── Run ───────────────────────────────────────────────────────────────────────
+    return Response(
+        stream_with_context(generate()),
+        content_type=upstream.headers.get("content-type", "audio/mpeg")
+    )
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
