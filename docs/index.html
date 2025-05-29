@@ -1,55 +1,31 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>Smart Radio Search</title>
   <style>
-    /* --- styles pulled inline --- */
-    body {
-      margin:0; padding:1rem;
-      font-family:sans-serif;
-      background:#b7b7b7; color:#111;
-      transition:background .3s,color .3s;
-    }
-    body.dark {
-      background:#444; color:#eee;
-    }
+    body { margin:0; padding:1rem; font-family:sans-serif;
+           background:#b7b7b7; color:#111; transition:background .3s,color .3s; }
+    body.dark { background:#444; color:#eee; }
     h1 { margin-top:0; }
-    .controls {
-      display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:1rem; align-items:center;
-    }
-    .controls input { flex:1 1 200px; padding:.4rem; }
-    .controls select,
-    .controls button { padding:.4rem .8rem; white-space:nowrap; }
     #description { margin:0 0 1rem; }
-    #results {
-      display:grid;
-      grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
-      gap:1rem;
-    }
-    .card {
-      background:#fff; border-radius:.5rem; padding:1rem;
-      box-shadow:0 2px 4px rgba(0,0,0,.1);
-      transition:background .3s,color .3s;
-      display:flex; flex-direction:column;
-    }
-    body.dark .card {
-      background:#333; color:#eee; box-shadow:0 2px 4px rgba(0,0,0,.5);
-    }
-    .card h3 { margin:0 0 .5rem; font-size:1.1rem; }
+    .controls { display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:1rem; }
+    .controls input { flex:1 1 200px; padding:.5rem; }
+    .controls select, .controls button { padding:.5rem 1rem; }
+    #results { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:1rem; }
+    .card { background:#fff; padding:1rem; border-radius:.5rem; box-shadow:0 2px 4px rgba(0,0,0,.1);
+            transition:background .3s,color .3s; display:flex; flex-direction:column; }
+    body.dark .card { background:#333; color:#eee; box-shadow:0 2px 4px rgba(0,0,0,.5); }
+    .card h3 { margin:0 0 .5rem; }
     .card .meta { font-size:.9rem; margin:.25rem 0; }
     .card audio { width:100%; margin:.5rem 0; }
     .card .now-playing { font-style:italic; margin-bottom:.5rem; }
-    .tag {
-      color:#06c; cursor:pointer; text-decoration:none; margin-right:.25rem;
-    }
+    .tag { color:#06c; text-decoration:none; cursor:pointer; margin-right:.25rem; }
     .tag:hover { text-decoration:underline; }
     .loading { font-style:italic; }
-    .emoji {
-      display:inline-block; width:auto!important; height:1em!important;
-      vertical-align:-.1em!important; margin:0 .1em .0 .05em!important;
-    }
+    .emoji { display:inline-block; height:1em!important; width:auto!important;
+             vertical-align:-.1em!important; margin:0 .1em .0 .05em!important; }
   </style>
 </head>
 <body>
@@ -60,7 +36,7 @@
   </p>
 
   <div class="controls">
-    <input id="query" placeholder="Search for genre, location, etc." autocomplete="off" />
+    <input id="query" placeholder="Search for genre, location, etc." autocomplete="off"/>
     <button id="searchBtn">Search</button>
     <select id="countryFilter"><option value="">All Countries</option></select>
     <select id="genreFilter"><option value="">All Genres</option></select>
@@ -88,181 +64,147 @@
       "r&b","indie","alternative","punk","latin"
     ];
 
-    let allStations = [];
+    const qEl = document.getElementById("query"),
+          btn = document.getElementById("searchBtn"),
+          cFilter = document.getElementById("countryFilter"),
+          gFilter = document.getElementById("genreFilter"),
+          sFilter = document.getElementById("sortBy"),
+          aiEl   = document.getElementById("aiResult"),
+          out    = document.getElementById("results");
 
-    const qEl = document.getElementById("query");
-    const searchBtn = document.getElementById("searchBtn");
-    const cFilter = document.getElementById("countryFilter");
-    const gFilter = document.getElementById("genreFilter");
-    const sFilter = document.getElementById("sortBy");
-    const aiEl = document.getElementById("aiResult");
-    const resultsEl = document.getElementById("results");
+    let allStations = [], currentAudio = null;
 
-    function toggleDark() {
-      document.body.classList.toggle("dark");
-    }
+    function toggleDark(){ document.body.classList.toggle("dark"); }
 
-    function countryCodeToFlag(cc) {
-      return cc
-        ? cc.toUpperCase().split("").map(c =>
-            String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65)
-          ).join("")
-        : "";
+    function countryCodeToFlag(cc){
+      return cc? cc.toUpperCase().split("")
+        .map(c=>String.fromCodePoint(0x1F1E6 + c.charCodeAt(0)-65))
+        .join("") : "";
     }
 
     // populate static genres
-    COMMON_GENRES.sort().forEach(g => {
+    COMMON_GENRES.sort().forEach(g=>{
       const o = document.createElement("option");
       o.value = g; o.textContent = g;
       gFilter.appendChild(o);
     });
 
     // wire controls
-    searchBtn.onclick = () => runSearch();
-    qEl.addEventListener("keydown", e => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        runSearch();
+    btn.onclick = ()=>runSearch({ top:false });
+    qEl.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); runSearch({ top:false }); }});
+    gFilter.onchange = ()=>{ qEl.value=""; aiEl.textContent=""; runSearch({ field:"tag", query:gFilter.value }); };
+    cFilter.onchange = ()=>runSearch({ top:false });
+    sFilter.onchange = ()=>renderStations(allStations);
+
+    window.addEventListener("DOMContentLoaded",()=>{
+      initCountries();
+      runSearch({ top:true });
+    });
+
+    // fetch full country list from proxy
+    async function initCountries(){
+      try {
+        const resp = await fetch(API + "/countries");
+        const list = await resp.json();
+        list.sort((a,b)=>a.name.localeCompare(b.name))
+            .forEach(c=>{
+          const o = document.createElement("option");
+          o.value = c.code.toLowerCase();
+          o.textContent = `${countryCodeToFlag(c.code)} ${c.name}`;
+          cFilter.appendChild(o);
+        });
+      } catch(e){
+        console.warn("Country fetch failed", e);
       }
-    });
-    gFilter.onchange = () => {
-      qEl.value = "";    // clear text
+    }
+
+    // main loader
+    async function runSearch(opts={}){
       aiEl.textContent = "";
-      runSearch({ field: "tag", query: gFilter.value });
-    };
-    cFilter.onchange = () => runSearch();
-    sFilter.onchange = () => renderStations(allStations);
+      out.innerHTML = "<p class='loading'>Loading…</p>";
 
-    window.addEventListener("DOMContentLoaded", () => {
-      // initial load: top stations
-      runSearch({ top: true });
-    });
-
-    async function runSearch(opts = {}) {
-      aiEl.textContent = "";
-      resultsEl.innerHTML = "<p class='loading'>Loading…</p>";
-
-      // if user entered text, do the AI→tags fallback search
-      if (qEl.value.trim() && !opts.top && opts.field !== "tag") {
-        // AI refine
+      // AI‐refine if text present
+      if(qEl.value.trim() && opts.field!=="tag"){
         try {
-          const r = await fetch(API + "/ai-query", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query: qEl.value.trim() })
+          const r = await fetch(API+"/ai-query",{
+            method:"POST", headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({query:qEl.value.trim()})
           });
-          const j = await r.json();
-          if (j.tags) {
-            aiEl.innerHTML = `AI suggested tags: <strong>${j.tags}</strong>`;
-            opts = { field: "tag", query: j.tags };
+          const js = await r.json();
+          if(js.tags){
+            aiEl.innerHTML = `AI suggested tags: <strong>${js.tags}</strong>`;
+            opts = { field:"tag", query:js.tags };
           }
-        } catch {
-          console.warn("AI refine failed");
-        }
+        }catch{}
       }
 
-      // build payload
+      // assemble payload
       const payload = {
         filter_dead: true,
         sort_by: sFilter.value.split(":")[0],
         ...opts
       };
-
-      // always include selected genre/country unless overridden
-      if (!opts.top) {
-        if (!payload.query && gFilter.value) {
-          payload.field = "tag";
-          payload.query = gFilter.value;
+      // include genre/country if no text
+      if(!opts.top){
+        if(!payload.query && gFilter.value) {
+          payload.field="tag"; payload.query=gFilter.value;
         }
-        if (cFilter.value) {
-          payload.countrycode = cFilter.value;
-        }
+        if(cFilter.value) payload.countrycode=cFilter.value;
       }
 
-      // fetch
       try {
-        const res = await fetch(API + "/search", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
+        const r = await fetch(API+"/search",{
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body:JSON.stringify(payload)
         });
-        if (!res.ok) throw "";
-        const stations = await res.json();
-        allStations = stations;
-        populateCountryFilter(stations);
-        renderStations(stations);
+        if(!r.ok) throw "";
+        allStations = await r.json();
+        renderStations(allStations);
       } catch {
-        resultsEl.innerHTML = "<p class='loading'>Failed to load stations.</p>";
+        out.innerHTML = "<p class='loading'>Failed to load stations.</p>";
       }
     }
 
-    function populateCountryFilter(stations) {
-      // only once: if there are already >1 real options, skip
-      if (cFilter.options.length > 1) return;
-      const seen = new Set();
-      stations.forEach(s => {
-        const cc = s.countrycode?.toLowerCase();
-        const cn = s.country;
-        if (cc && !seen.has(cc)) {
-          seen.add(cc);
-          const o = document.createElement("option");
-          o.value = cc;
-          o.textContent = `${countryCodeToFlag(cc)} ${cn}`;
-          cFilter.appendChild(o);
-        }
-      });
-    }
-
-    function renderStations(stations) {
-      if (!stations.length) {
-        resultsEl.innerHTML = "<p>No stations found.</p>";
+    // render cards
+    function renderStations(stations){
+      if(!stations.length){
+        out.innerHTML="<p>No stations found.</p>";
         return;
       }
       // sort
-      const [field, dir] = sFilter.value.split(":");
-      stations.sort((a,b) =>
-        dir === "asc"
-          ? a[field] - b[field]
-          : b[field] - a[field]
+      const [field,dir] = sFilter.value.split(":");
+      stations.sort((a,b)=>
+        dir==="asc"? a[field]-b[field] : b[field]-a[field]
       );
-
-      resultsEl.innerHTML = "";
-      stations.forEach((s,i) => {
-        let url = s.url_resolved || "";
-        if (url.startsWith("http://")) url = url.replace("http://", "https://");
-        if (!url.startsWith("https://")) return;
-
+      out.innerHTML="";
+      stations.forEach((s,i)=>{
+        let url = (s.url_resolved||"").replace(/^http:/,"https:");
+        if(!url.startsWith("https://")) return;
+        const flag = countryCodeToFlag(s.countrycode||"");
+        const tagsArr = (s.tags||"").split(",").map(t=>t.trim()).filter(Boolean);
+        const disp = tagsArr.slice(0,5).map(t=>`<a class="tag">${t}</a>`).join(", ");
+        const more = tagsArr.length>5? ", …": "";
         const card = document.createElement("div");
-        card.className = "card";
-        const flag = countryCodeToFlag(s.countrycode || "");
-        const tags = (s.tags||"")
-          .split(",").map(t=>t.trim()).filter(Boolean)
-          .slice(0,5).map(t=>`<a class="tag">${t}</a>`)
-          .join(", ") + ((s.tags||"").split(",").length > 5 ? ", …" : "");
-
+        card.className="card";
         card.innerHTML = `
           <h3>#${i+1} ${s.name}</h3>
           <p class="meta">${flag} ${s.country||""}</p>
           <audio controls src="${url}"></audio>
-          <p class="now-playing"><em>Now playing: —</em></p>
+          <p class="now-playing">Now playing: —</p>
           <p class="meta"><strong>Clicks:</strong> ${s.clickcount||0} | <strong>Votes:</strong> ${s.votes||0}</p>
           <p class="meta"><strong>Bitrate:</strong> ${s.bitrate||"?"} kbps | <strong>Codec:</strong> ${s.codec||"n/a"}</p>
-          <p class="meta"><strong>Tags:</strong> ${tags||"—"}</p>
+          <p class="meta"><strong>Tags:</strong> ${disp||"—"}${more}</p>
         `;
-        resultsEl.appendChild(card);
-
+        out.appendChild(card);
         const audio = card.querySelector("audio");
-        audio.addEventListener("play", () => {
-          document.querySelectorAll("audio").forEach(a => {
-            if (a !== audio) a.pause();
-          });
+        audio.addEventListener("play", ()=>{ 
+          document.querySelectorAll("audio").forEach(a=>{ if(a!==audio) a.pause(); });
+          card.querySelector(".now-playing").textContent = `Now playing: ${s.name}`;
         });
       });
-
-      // render flags
-      twemoji.parse(document.body, {
-        base: "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/",
-        folder: "svg", ext:".svg"
+      twemoji.parse(document.body,{
+        base:"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/",
+        folder:"svg", ext:".svg"
       });
     }
   </script>
