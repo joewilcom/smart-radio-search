@@ -1,36 +1,46 @@
 import os
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
 import requests
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# ─── Load env & init ────────────────────────────────────────────────────────────
+# ─── Load environment variables ────────────────────────────────────────────────
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
-    raise RuntimeError("Missing OPENAI_API_KEY in your environment.")
+    raise RuntimeError("Missing OPENAI_API_KEY in environment")
 
+# ─── Initialize Flask & OpenAI client ─────────────────────────────────────────
+app = Flask(__name__)
 client = OpenAI(api_key=api_key)
-app    = Flask(__name__)
 
-# ─── Enable CORS on all routes & methods ────────────────────────────────────────
+# ─── Enable CORS globally for GitHub Pages origin ─────────────────────────────
 CORS(
     app,
     resources={r"/*": {"origins": [
-        "https://joewilcom.github.io",
-        "http://localhost:8000"
+        "https://joewilcom.github.io"
     ]}},
-    methods=["GET","POST","OPTIONS"],
+    methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type"]
 )
 
-# ─── Health check ───────────────────────────────────────────────────────────────
+# ─── Handle preflight OPTIONS requests yourself ───────────────────────────────
+@app.before_request
+def handle_options():
+    if request.method == "OPTIONS":
+        resp = make_response()
+        resp.headers["Access-Control-Allow-Origin"] = "https://joewilcom.github.io"
+        resp.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        return resp  # short-circuit the request
+
+# ─── Health check ─────────────────────────────────────────────────────────────
 @app.route("/", methods=["GET", "OPTIONS"])
 def home():
     return "Smart Radio Search API is up."
 
-# ─── AI‐powered tag refinement ──────────────────────────────────────────────────
+# ─── AI query endpoint ────────────────────────────────────────────────────────
 @app.route("/ai-query", methods=["POST", "OPTIONS"])
 def ai_query():
     data = request.get_json(silent=True) or {}
@@ -43,15 +53,15 @@ def ai_query():
             model="gpt-3.5-turbo",
             messages=[
                 {
-                  "role":    "system",
-                  "content": (
-                    "Turn the user's music query into a few relevant genre-style tags. "
-                    "Respond with comma-separated tags."
-                  )
+                    "role": "system",
+                    "content": (
+                        "Turn the user's music query into a few relevant genre-style tags. "
+                        "Respond with comma-separated tags."
+                    )
                 },
                 {"role": "user", "content": user_query}
             ],
-            max_tokens=20,
+            max_tokens=20
         )
         tags = resp.choices[0].message.content.strip()
         return jsonify({"tags": tags})
@@ -59,12 +69,12 @@ def ai_query():
         app.logger.error("Error in /ai-query: %s", e)
         return jsonify({"error": str(e)}), 500
 
-# ─── Radio Browser search proxy ────────────────────────────────────────────────
+# ─── Search endpoint ──────────────────────────────────────────────────────────
 @app.route("/search", methods=["POST", "OPTIONS"])
 def search():
     data = request.get_json(silent=True) or {}
 
-    # If top‐stations request
+    # Top‐stations shortcut
     if data.get("top"):
         url = "http://all.api.radio-browser.info/json/stations/topclick"
         params = {
@@ -100,7 +110,7 @@ def search():
 
     return jsonify(stations)
 
-# ─── Run ────────────────────────────────────────────────────────────────────────
+# ─── Run the app ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
