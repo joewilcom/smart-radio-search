@@ -32,13 +32,11 @@
     .controls button {
       padding: .5rem 1rem;
     }
-
     #results {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(300px,1fr));
       gap: 1rem;
     }
-
     .card {
       background-color: #fff;
       border-radius: .5rem;
@@ -53,35 +51,34 @@
       color: #eee;
       box-shadow: 0 2px 4px rgba(0,0,0,0.5);
     }
-
-    .card h3 {
-      margin: 0 0 .5rem;
-      font-size: 1.1rem;
+    .card h3 { margin: 0 0 .5rem; font-size: 1.1rem; }
+    .card .meta { font-size: .9rem; margin: .25rem 0; }
+    .card audio { margin: .5rem 0; width: 100%; }
+    .tag {
+      color: #06c;
+      text-decoration: none;
+      cursor: pointer;
+      margin-right: .25rem;
     }
-    .card .meta {
-      font-size: .9rem;
-      margin: .25rem 0;
-    }
-    .card audio {
-      margin: .5rem 0;
-      width: 100%;
-    }
-    .loading {
-      font-style: italic;
-    }
+    .tag:hover { text-decoration: underline; }
+    .loading { font-style: italic; }
   </style>
 </head>
 <body>
   <h1>Smart Radio Search v1.3</h1>
 
   <div class="controls">
-    <input id="query" placeholder="Search for genre, location, etc." />
+    <input
+      id="query"
+      placeholder="Search for genre, location, etc."
+      autocomplete="off"
+    />
     <select id="sortBy">
       <option value="votes">Votes</option>
       <option value="clickcount">Clicks</option>
       <option value="bitrate">Bitrate</option>
     </select>
-    <button onclick="search()">Search</button>
+    <button id="searchBtn">Search</button>
     <button onclick="toggleDark()">Toggle Dark Mode</button>
   </div>
 
@@ -89,15 +86,30 @@
   <div id="results"></div>
 
   <script>
-    // Switch dark/light mode by toggling a class
+    // Dark mode toggle
     function toggleDark() {
       document.body.classList.toggle("dark");
     }
 
-    // Run on page load
+    // Submit search on click or Enter
+    document.getElementById("searchBtn").onclick = search;
+    document.getElementById("query").addEventListener("keydown", e => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        search();
+      }
+    });
+
+    // Delegate clicks on tags
+    document.getElementById("results").addEventListener("click", e => {
+      if (e.target.classList.contains("tag")) {
+        document.getElementById("query").value = e.target.textContent;
+        search();
+      }
+    });
+
     window.addEventListener("DOMContentLoaded", loadTopStations);
 
-    // Load top 10 by clicks initially
     async function loadTopStations() {
       const results = document.getElementById("results");
       results.innerHTML = "<p class='loading'>Loading top stations…</p>";
@@ -115,9 +127,9 @@
             })
           }
         );
-        const stations = await res.json();
-        // Sort descending by votes for consistency
-        stations.sort((a, b) => (b.votes||0) - (a.votes||0));
+        let stations = await res.json();
+        // Always sort by votes desc
+        stations.sort((a,b)=> (b.votes||0)-(a.votes||0));
         renderStations(stations);
       } catch {
         results.innerHTML =
@@ -125,7 +137,6 @@
       }
     }
 
-    // Main search flow
     async function search() {
       const raw = document.getElementById("query").value.trim();
       const sortBy = document.getElementById("sortBy").value;
@@ -136,10 +147,9 @@
       results.innerHTML = "<p class='loading'>Thinking…</p>";
       aiResEl.textContent = "";
 
-      let finalQuery = raw;
-      let field = "name";
+      let finalQuery = raw, field = "name";
 
-      // 1) AI‐powered tag refinement
+      // AI tag refinement
       try {
         const ai = await fetch(
           "https://simple-naomi-joewilcom-71ae2211.koyeb.app/ai-query",
@@ -160,12 +170,12 @@
         console.warn("AI refinement failed");
       }
 
-      // 2) Support multi‐term: split on commas (tags) or spaces (names)
+      // Split into individual terms
       const terms = field === "tag"
-        ? finalQuery.split(",").map(s => s.trim()).filter(Boolean)
+        ? finalQuery.split(",").map(s=>s.trim()).filter(Boolean)
         : finalQuery.split(/\s+/).filter(Boolean);
 
-      // 3) Fetch each term, dedupe & merge
+      // Fetch & merge
       let merged = new Map();
       try {
         const all = await Promise.all(
@@ -174,15 +184,15 @@
               "https://simple-naomi-joewilcom-71ae2211.koyeb.app/search",
               {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ query: term, filter_dead: true, sort_by: sortBy, field })
+                headers:{ "Content-Type":"application/json" },
+                body: JSON.stringify({ query: term, filter_dead:true, sort_by:sortBy, field })
               }
-            ).then(r => (r.ok ? r.json() : []))
+            ).then(r=> r.ok ? r.json() : [])
           )
         );
         all.flat().forEach(s => {
-          const key = s.stationuuid || s.url_resolved;
-          if (!merged.has(key)) merged.set(key, s);
+          const key = s.stationuuid||s.url_resolved;
+          if (!merged.has(key)) merged.set(key,s);
         });
       } catch {
         results.innerHTML =
@@ -190,15 +200,14 @@
         return;
       }
 
-      // Turn merged Map → Array, sort by votes desc, limit to 50
+      // Convert, sort, limit
       const stations = Array.from(merged.values())
-        .sort((a, b) => (b.votes||0) - (a.votes||0))
-        .slice(0, 50);
+        .sort((a,b)=> (b.votes||0)-(a.votes||0))
+        .slice(0,50);
 
       renderStations(stations);
     }
 
-    // Build the grid of cards
     function renderStations(stations) {
       const results = document.getElementById("results");
       results.innerHTML = "";
@@ -208,27 +217,35 @@
         return;
       }
 
-      stations.forEach((st, i) => {
-        // Attempt to upgrade http→https or skip
-        let url = (st.url_resolved || "");
-        if (url.startsWith("http://")) url = url.replace("http://", "https://");
+      stations.forEach((st,i) => {
+        // Upgrade or skip HTTP streams
+        let url = st.url_resolved||"";
+        if (url.startsWith("http://")) url = url.replace("http://","https://");
         if (!url.startsWith("https://")) return;
+
+        // Build clickable tags (max 5)
+        const tagList = (st.tags||"").split(",").map(s=>s.trim()).filter(Boolean);
+        const displayed = tagList.slice(0,5);
+        let tagsHTML = displayed
+          .map(t => `<a class="tag">${t}</a>`)
+          .join(", ");
+        if (tagList.length > 5) tagsHTML += ", …";
 
         const card = document.createElement("div");
         card.className = "card";
         card.innerHTML = `
-          <h3>#${i + 1} ${st.name}</h3>
-          <p class="meta">${st.country || "Unknown country"}</p>
+          <h3>#${i+1} ${st.name}</h3>
+          <p class="meta">${st.country||"Unknown country"}</p>
           <audio controls src="${url}"></audio>
           <p class="meta">
-            <strong>Clicks:</strong> ${st.clickcount || 0}
-            | <strong>Votes:</strong> ${st.votes || 0}
+            <strong>Clicks:</strong> ${st.clickcount||0}
+            | <strong>Votes:</strong> ${st.votes||0}
           </p>
           <p class="meta">
-            <strong>Bitrate:</strong> ${st.bitrate || "?"} kbps
-            | <strong>Codec:</strong> ${st.codec || "n/a"}
+            <strong>Bitrate:</strong> ${st.bitrate||"?"} kbps
+            | <strong>Codec:</strong> ${st.codec||"n/a"}
           </p>
-          <p class="meta"><strong>Tags:</strong> ${st.tags || "—"}</p>
+          <p class="meta"><strong>Tags:</strong> ${tagsHTML||"—"}</p>
         `;
         results.appendChild(card);
       });
