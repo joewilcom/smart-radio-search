@@ -5,7 +5,7 @@ import requests
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# load .env which contains OPENAI_API_KEY
+# ─── Load env & initialize ─────────────────────────────────────────────────────
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
@@ -14,25 +14,28 @@ if not api_key:
 client = OpenAI(api_key=api_key)
 app    = Flask(__name__)
 
-# allow both GH Pages and local dev, on all routes
+# ─── Global CORS ────────────────────────────────────────────────────────────────
+# Allow the frontend origin & local dev, on ALL routes / methods
 CORS(
     app,
     resources={r"/*": {"origins": [
         "https://joewilcom.github.io",
         "http://localhost:8000"
     ]}},
-    methods=["GET", "POST", "OPTIONS"],
+    methods=["GET","POST","OPTIONS"],
     allow_headers=["Content-Type"]
 )
 
-@app.route("/")
+# ─── Health check ───────────────────────────────────────────────────────────────
+@app.route("/", methods=["GET", "OPTIONS"])
 def home():
     return "Smart Radio Search API is running."
 
-@app.route("/ai-query", methods=["POST"])
+# ─── AI Tag Refinement Endpoint ─────────────────────────────────────────────────
+@app.route("/ai-query", methods=["POST", "OPTIONS"])
 def ai_query():
-    data       = request.get_json() or {}
-    user_query = data.get("query", "").strip()
+    data       = request.get_json(silent=True) or {}
+    user_query = (data.get("query") or "").strip()
     if not user_query:
         return jsonify({"error": "No query provided"}), 400
 
@@ -53,10 +56,13 @@ def ai_query():
     tags = resp.choices[0].message.content.strip()
     return jsonify({"tags": tags})
 
-@app.route("/search", methods=["POST"])
+# ─── Search Endpoint ────────────────────────────────────────────────────────────
+@app.route("/search", methods=["POST", "OPTIONS"])
 def search():
-    data = request.get_json() or {}
+    # JSON body (or empty dict)
+    data = request.get_json(silent=True) or {}
 
+    # Top-stations shortcut?
     if data.get("top"):
         url = "http://all.api.radio-browser.info/json/stations/topclick"
         params = {
@@ -66,10 +72,11 @@ def search():
             "hidebroken": "true"
         }
     else:
+        # Full-text or tag search
         query       = data.get("query", "")
-        field       = data.get("field", "name")
+        field       = data.get("field", "name")    # name or tag
         sort_by     = data.get("sort_by", "votes")
-        filter_dead = data.get("filter_dead", False)
+        filter_dead = bool(data.get("filter_dead", False))
 
         url = "http://all.api.radio-browser.info/json/stations/search"
         params = {
@@ -82,13 +89,16 @@ def search():
             params["hidebroken"] = "true"
 
     try:
-        r = requests.get(url, params=params, timeout=5)
-        r.raise_for_status()
-        return jsonify(r.json())
+        resp = requests.get(url, params=params, timeout=5)
+        resp.raise_for_status()
+        stations = resp.json()
     except Exception as e:
-        print("Error in /search:", e)
+        app.logger.error("Error in /search: %s", e)
         return jsonify([]), 500
 
+    return jsonify(stations)
+
+# ─── Run ────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
