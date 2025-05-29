@@ -41,16 +41,23 @@ def home():
 # ─── Proxy the Radio Browser country list ──────────────────────────────────────
 @app.route("/countries", methods=["GET", "OPTIONS"])
 def countries():
+    """
+    Proxy the Radio Browser country list over HTTPS so
+    we don’t run into mixed-content or blocked HTTP issues.
+    """
     try:
+        # use the HTTPS endpoint instead of HTTP
         resp = requests.get(
-            "http://all.api.radio-browser.info/json/countries",
+            "https://de1.api.radio-browser.info/json/countries",
             timeout=5
         )
         resp.raise_for_status()
         return jsonify(resp.json())
     except Exception as e:
         app.logger.error("Countries proxy error: %s", e)
-        return jsonify([]), 500
+        # return an empty array so the frontend fails gracefully
+        return jsonify([]), 200
+
 
 # ─── AI tag refinement endpoint ───────────────────────────────────────────────
 @app.route("/ai-query", methods=["POST", "OPTIONS"])
