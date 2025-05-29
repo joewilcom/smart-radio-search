@@ -191,9 +191,9 @@
       document.body.dataset.theme =
         document.body.dataset.theme === 'light' ? 'dark' : 'light';
     });
-    searchBtn.addEventListener('click', runSearch);
+    searchBtn.addEventListener('click', () => runSearch());
     [countrySel, genreSel, sortSel].forEach(el =>
-      el.addEventListener('change', runSearch)
+      el.addEventListener('change', () => runSearch())
     );
     searchInput.addEventListener('keydown', e=>{
       if(e.key==='Enter') runSearch();
@@ -232,52 +232,59 @@
       }
     }
 
-    // run search (or top)
-    async function runSearch(opts = {}){
+    // ─── UPDATED runSearch with guaranteed name + optional AI tags ─────────
+    async function runSearch(opts = {}) {
       aiResultEl.textContent = '';
       stationsDiv.innerHTML = '<p>Loading…</p>';
 
-      // build payload
+      // base payload + any opts (e.g. {top:true})
       let payload = { filter_dead: true, sort_by: sortSel.value, ...opts };
-      if(!opts.top){
+
+      if (!opts.top) {
         const text = searchInput.value.trim();
-        if(text){
-          // AI refinement
+
+        // always send the raw query as name if present
+        if (text) {
+          payload.name = text;
+
+          // then try to get AI tags
           try {
             const r = await fetch(`${API_BASE}/ai-query`, {
-              method:'POST',
-              headers:{'Content-Type':'application/json'},
-              body: JSON.stringify({query:text})
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ query: text })
             });
             const js = await r.json();
-            if(js.tags){
+            if (js.tags) {
               aiResultEl.innerHTML =
-                'AI suggested tags: <strong>'+js.tags+'</strong>';
+                'AI suggested tags: <strong>' + js.tags + '</strong>';
               payload.tagList = js.tags;
-            } else {
-              payload.name = text;
             }
-          } catch {}
+          } catch (e) {
+            console.warn('AI refine failed, using name only', e);
+          }
         }
-        // if no text but genre selected
-        if(!payload.name && genreSel.value){
+
+        // if no text & user picked a genre, use that
+        if (!payload.name && genreSel.value) {
           payload.tagList = genreSel.value;
         }
+
         // country filter
-        if(countrySel.value){
+        if (countrySel.value) {
           payload.countrycode = countrySel.value;
         }
       }
 
-      // fetch stations
+      // finally fetch
       try {
         const r = await fetch(`${API_BASE}/search`, {
           method:'POST',
-          headers:{'Content-Type':'application/json'},
+          headers:{ 'Content-Type':'application/json' },
           body: JSON.stringify(payload)
         });
         const data = await r.json();
-        renderStations(Array.isArray(data)? data : []);
+        renderStations(Array.isArray(data) ? data : []);
       } catch(e){
         console.error(e);
         stationsDiv.innerHTML = '<p>Failed to load stations.</p>';
