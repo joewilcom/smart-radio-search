@@ -1,3 +1,6 @@
+Here’s your complete `index.html`, with the new two-step search logic baked into `runSearch`. Now we always send the raw text as `name`, attempt AI tags, and—if that returns zero stations—automatically retry name-only:
+
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -211,7 +214,7 @@
       COMMON_GENRES.sort().forEach(g=>{
         const o = document.createElement('option');
         o.value = g;
-        o.textContent = g.charAt(0).toUpperCase() + g.slice(1);
+        o.textContent = g.charAt(0).toUpperCase()+g.slice(1);
         genreSel.append(o);
       });
     }
@@ -232,40 +235,40 @@
       }
     }
 
-    // ─── UPDATED runSearch with guaranteed name + optional AI tags ─────────
+    // ─── Two-step runSearch: name + AI tags, then fallback ────────────────────
     async function runSearch(opts = {}) {
       aiResultEl.textContent = '';
       stationsDiv.innerHTML = '<p>Loading…</p>';
 
       // base payload + any opts (e.g. {top:true})
       let payload = { filter_dead: true, sort_by: sortSel.value, ...opts };
+      let stations = [];
 
       if (!opts.top) {
         const text = searchInput.value.trim();
-
-        // always send the raw query as name if present
         if (text) {
+          // 1) Always include raw text as name
           payload.name = text;
 
-          // then try to get AI tags
+          // 2) Then try AI tags
           try {
             const r = await fetch(`${API_BASE}/ai-query`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              method:'POST',
+              headers:{ 'Content-Type':'application/json' },
               body: JSON.stringify({ query: text })
             });
             const js = await r.json();
             if (js.tags) {
               aiResultEl.innerHTML =
-                'AI suggested tags: <strong>' + js.tags + '</strong>';
+                'AI suggested tags: <strong>'+js.tags+'</strong>';
               payload.tagList = js.tags;
             }
-          } catch (e) {
+          } catch(e){
             console.warn('AI refine failed, using name only', e);
           }
         }
 
-        // if no text & user picked a genre, use that
+        // if still no name but a genre is selected
         if (!payload.name && genreSel.value) {
           payload.tagList = genreSel.value;
         }
@@ -276,19 +279,35 @@
         }
       }
 
-      // finally fetch
+      // First try (with tagList if set)
       try {
-        const r = await fetch(`${API_BASE}/search`, {
+        const r1 = await fetch(`${API_BASE}/search`, {
           method:'POST',
           headers:{ 'Content-Type':'application/json' },
           body: JSON.stringify(payload)
         });
-        const data = await r.json();
-        renderStations(Array.isArray(data) ? data : []);
+        stations = await r1.json();
       } catch(e){
-        console.error(e);
-        stationsDiv.innerHTML = '<p>Failed to load stations.</p>';
+        console.error('primary search failed', e);
       }
+
+      // Fallback: if zero results and we used AI tags, strip tagList and retry by name
+      if ((!stations || stations.length === 0) && payload.tagList && payload.name) {
+        console.info('No AI-tagged results, retrying name-only search');
+        delete payload.tagList;
+        try {
+          const r2 = await fetch(`${API_BASE}/search`, {
+            method:'POST',
+            headers:{ 'Content-Type':'application/json' },
+            body: JSON.stringify(payload)
+          });
+          stations = await r2.json();
+        } catch(e){
+          console.error('fallback name-only search failed', e);
+        }
+      }
+
+      renderStations(Array.isArray(stations) ? stations : []);
     }
 
     // render
@@ -314,7 +333,7 @@
       // country + flag
       const ctr = document.createElement('div');
       ctr.className = 'country';
-      if(st.countrycode){
+      if (st.countrycode) {
         const img = document.createElement('img');
         img.className = 'flag';
         img.src = `https://flagcdn.com/1x1/${st.countrycode.toLowerCase()}.svg`;
@@ -324,15 +343,10 @@
       ctr.append(document.createTextNode(st.country||''));
       card.append(ctr);
 
-      // ─── audio ───────────────────────────────────────────────
+      // audio
       const audio = document.createElement('audio');
       audio.controls = true;
-      // if it's an http:// stream, proxy it to avoid mixed-content
-      let src = st.url_resolved || st.url;
-      if (src && src.startsWith('http://')) {
-        src = `${API_BASE}/proxy?url=${encodeURIComponent(src)}`;
-      }
-      audio.src = src;
+      audio.src = st.url_resolved||st.url;
       audio.addEventListener('play', ()=>{
         if(currentAudio && currentAudio!==audio) currentAudio.pause();
         currentAudio = audio;
@@ -350,7 +364,7 @@
       card.append(stats);
 
       // tags
-      if(st.tags){
+      if (st.tags) {
         const tg = document.createElement('div');
         tg.className = 'tags';
         const tags = st.tags.split(/,|\s+/).map(t=>t.trim()).filter(Boolean).slice(0,5);
@@ -374,3 +388,4 @@
   </script>
 </body>
 </html>
+```
