@@ -1,142 +1,153 @@
-# Smart Radio Search
+# Smart Radio Search v1.3
 
-Smart Radio Search is a web-based app for discovering and playing streaming radio stations around the world. It leverages the [Radio Browser API](https://www.radio-browser.info/) to provide search, preview, and discovery functionality.
+Smart Radio Search is a web-based app for discovering, previewing, and playing streaming radio stations around the world. It uses a Flask-powered backend to proxy the [Radio Browser API](https://www.radio-browser.info/) and a vanilla-JS frontend with AI-assisted tagging and a responsive grid layout.
 
-## Features
+---
 
-- Search for radio stations by genre, location, language, or tags
-- On load, displays top 10 stations by popularity (clicks)
-- In-browser audio playback (HTML5 player)
-- Country flag emoji for visual location cues
-- Only one stream plays at a time
-- Light/dark mode toggle
-- Clickable tags to start a new search
-- Tags truncated after 5 (with ellipsis)
-- Filters out dead streams
-- Incremental loading (Load More button for long results — if enabled)
+## 🔥 Highlights & Features
 
-## Project Structure
+* **Search by name, genre, location or tags**
+* **AI-powered tag refinement**: input “rock edm” → backend returns “rock, edm” tags
+* **Multi-term queries**: splits on spaces (names) or commas (tags) and merges results
+* **Top 10 on load**: shows the 10 most popular stations by click count
+* **One-at-a-time audio playback**: starting a new station auto-pauses any playing stream
+* **Responsive CSS grid** of station cards (min-width 300px)
+* **Country flags** rendered via Twemoji for cross-browser consistency
+* **Clickable tags**: click any tag to rerun a search for that genre
+* **Enter-to-search**: press Enter in the input box to trigger a query
+* **Dark/light mode toggle**
+* **Tag truncation**: shows up to 5 tags per station, with “…” if more
+* **Filters out dead streams** & upgrades `http://` URLs to `https://` where possible.
+
+---
+
+## 🚀 Project Structure
 
 ```
 smart-radio-search/
-├── backend/                  # Flask backend for proxying Radio Browser API
+├── backend/                  # Flask API proxy (POST /ai-query, POST /search)
 │   └── app.py
-├── docs/                     # Frontend HTML/CSS/JS
+├── docs/                     # Frontend (HTML/CSS/JS, uses twemoji.min.js)
 │   └── index.html
-├── Dockerfile                # For Fly.io deployment
-├── fly.toml                  # Fly.io config file
+├── Dockerfile                # Builds combined frontend+backend container
+├── fly.toml                  # Fly.io configuration
 └── README.md                 # This file
 ```
 
-## Tech Stack
+---
 
-- Frontend: Vanilla HTML, CSS, and JavaScript
-- Backend: Flask (Python)
-- Data Source: [Radio Browser API](https://de1.api.radio-browser.info/)
-- Hosting: [Fly.io](https://fly.io/)
+## 🛠 Tech Stack
 
-## Local Development
+* **Frontend**: HTML, CSS, JavaScript
+* **Backend**: Python, Flask, Flask-CORS
+* **AI-tagging**: OpenAI gpt-3.5-turbo
+* **Data source**: [Radio Browser API](https://www.radio-browser.info/)
+* **Hosting**: Fly.io (Docker)
+* **Emoji**: Twemoji for flags
 
-### Prerequisites
+---
 
-- Python 3.9+
-- Node.js (optional, not required)
-- Fly.io CLI (`flyctl`)
-- Git
+## 💻 Local Development
 
-### 1. Clone the repository
+1. **Clone the repo**
+
+   ```bash
+   git clone https://github.com/your-username/smart-radio-search.git
+   cd smart-radio-search
+   ```
+
+2. **Backend** (optional, uses remote backend by default)
+
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   python app.py
+   ```
+
+   * Runs on `http://localhost:5000`
+
+3. **Frontend**
+
+   ```bash
+   cd docs
+   python -m http.server 8000
+   ```
+
+   * Open [http://localhost:8000](http://localhost:8000) in your browser
+
+---
+
+## ☁️ Production Deployment
+
+We combine frontend + backend into a single Docker container:
 
 ```bash
-git clone https://github.com/your-username/smart-radio-search.git
-cd smart-radio-search
-```
-
-### 2. Run backend locally (optional)
-
-```bash
-cd backend
-pip install flask flask-cors requests
-python app.py
-```
-
-Note: Production uses a live backend deployed on Fly.io at `https://smart-radio-search.fly.dev`.
-
-### 3. Run frontend locally
-
-You can run a basic web server in the `docs/` folder:
-
-```bash
-cd docs
-python -m http.server 8000
-```
-
-Then visit: [http://localhost:8000](http://localhost:8000)
-
-## Production Deployment (Fly.io)
-
-### First-time setup
-
-```bash
+# First-time only:
 fly launch
-```
 
-Then use:
-
-```bash
+# Deploy:
 fly deploy
 ```
 
-You can also run:
+* Your app will be live at `https://<your-app>.fly.dev`
+* Check logs with `fly logs`
 
-```bash
-fly logs
-```
+---
 
-To view real-time logs.
+## 📡 API Endpoints
 
-## Updating Your Deployment
+### POST `/ai-query`
 
-1. Commit your changes to GitHub
-2. Run:
+* **Request**
 
-   ```bash
-   fly deploy
-   ```
+  ```json
+  { "query": "classic rock" }
+  ```
+* **Response**
 
-   Fly will rebuild and redeploy your Docker container.
+  ```json
+  { "tags": "classic rock, rock, retro" }
+  ```
 
-## API Behavior (/search endpoint)
+### POST `/search`
 
-The `/search` endpoint accepts a POST request:
+* **Request**
 
-```json
-{
-  "query": "funk",
-  "filter_dead": true,
-  "top": false
-}
-```
+  ```json
+  {
+    "query": "rock",
+    "filter_dead": true,
+    "sort_by": "votes",
+    "field": "name"        // or "tag"
+  }
+  ```
+* **For top stations**
 
-### Parameters
+  ```json
+  { "top": true, "filter_dead": true, "sort_by": "clickcount" }
+  ```
+* **Response**
+  Array of station objects with:
 
-- `query`: The search term (name, genre, etc.)
-- `filter_dead`: Whether to exclude dead stations
-- `top`: If true, returns the top 10 stations by `clickcount`
+  * `stationuuid`, `name`, `url_resolved`
+  * `country`, `countrycode`
+  * `bitrate`, `codec`, `tags`, `votes`, `clickcount`
 
-## Possible Future Enhancements
+---
 
-- Add user favorites/bookmarks (via local storage or user login)
-- Allow sorting by bitrate or votes
-- Display station logos
-- Mobile responsive layout
-- Analytics on most searched terms
-- Internationalization / translation support
+## ⭐ Future Ideas
 
-## Credits
+* Persist user favorites (localStorage or login)
+* Station logos & waveforms
+* Infinite scroll / “Load more”
+* Mobile-first refinements
+* Analytics on search trends
+* i18n / translation support
 
-Created by [Your Name] — feel free to fork, improve, and explore.
+---
 
-Powered by:
-- [Radio Browser API](https://www.radio-browser.info/)
-- [Flask](https://flask.palletsprojects.com/)
-- [Fly.io](https://fly.io/)
+## 🙏 Credits
+
+Powered by OpenAI, Flask, Radio Browser API, and Twemoji.
+
+Feel free to fork, file issues, and submit PRs!

@@ -6,6 +6,15 @@
   <title>Smart Radio Search v1.4</title>
   <script src="twemoji.min.js"></script>
   <style>
+    /* ─── override all Twemoji flags to be small inline icons ─── */
+    .emoji {
+      display: inline-block;
+      height: 1em !important;
+      width: auto  !important;
+      vertical-align: -0.1em !important;
+      margin: 0 .1em 0 .05em !important;
+    }
+
     body {
       margin: 0;
       font-family: sans-serif;
@@ -95,7 +104,6 @@
   <div id="results"></div>
 
   <script>
-    // Helpers
     function countryCodeToFlag(cc) {
       return cc
         ? cc.toUpperCase()
@@ -108,12 +116,10 @@
       document.body.classList.toggle("dark");
     }
 
-    // Wire up Search + Enter
     document.getElementById("searchBtn").onclick = search;
     document.getElementById("query").addEventListener("keydown", e => {
       if (e.key === "Enter") { e.preventDefault(); search(); }
     });
-    // Delegate tag clicks
     document.getElementById("results").addEventListener("click", e => {
       if (e.target.classList.contains("tag")) {
         document.getElementById("query").value = e.target.textContent;
@@ -121,16 +127,13 @@
       }
     });
 
-    // On load: fetch top stations & build filters
     window.addEventListener("DOMContentLoaded", () => loadAndRender({ top: true }));
 
-    // Generic loader (used for top & search)
     async function loadAndRender(opts) {
       const resDiv = document.getElementById("results");
       document.getElementById("aiResult").textContent = "";
       resDiv.innerHTML = "<p class='loading'>Loading…</p>";
 
-      // Merge in query/filter options
       const payload = {
         filter_dead: true,
         sort_by:     document.getElementById("sortBy").value,
@@ -146,33 +149,28 @@
         if (!r.ok) throw new Error(r.status);
         let stations = await r.json();
 
-        // Client-side filtering by country & genre
+        // client‐side filters
         const country = document.getElementById("countryFilter").value;
         const genre   = document.getElementById("genreFilter").value;
         stations = stations
           .filter(s => !country || s.countrycode === country)
           .filter(s => !genre   || (s.tags||"").split(",").map(t=>t.trim()).includes(genre));
 
-        // Populate filters if this was the top-load
         if (opts.top) populateFilters(stations);
 
-        // Always sort by votes desc by default
-        stations.sort((a,b) => (b.votes||0)-(a.votes||0));
+        stations.sort((a,b)=>(b.votes||0)-(a.votes||0));
 
         renderStations(stations);
-      } catch (e) {
-        console.error(e);
+      } catch {
         resDiv.innerHTML = "<p class='loading'>Failed to load stations.</p>";
       }
     }
 
-    // On “Search” click
     async function search() {
       const raw = document.getElementById("query").value.trim();
       if (!raw) return;
-      // AI‐refinement
       try {
-        const ai = await fetch("https://simple-naomi-joewilcom-71ae2211.koyeb.app/ai-query",{
+        const ai = await fetch("https://simple-naomi-joewilcom-71ae2211.koyeb.app/ai-query", {
           method:"POST",
           headers:{"Content-Type":"application/json"},
           body: JSON.stringify({ query: raw })
@@ -181,29 +179,23 @@
         if (tags) {
           document.getElementById("aiResult").innerHTML =
             `Showing results for: <strong>${tags}</strong>`;
-          // split by comma → tag search
           return loadAndRender({ query: tags, field: "tag" });
         }
       } catch {
         console.warn("AI refine failed");
       }
-      // fallback name search
       loadAndRender({ query: raw, field: "name" });
     }
 
-    // Build Country & Genre dropdowns
     function populateFilters(stations) {
       const cf = document.getElementById("countryFilter");
       const gf = document.getElementById("genreFilter");
       const countries = new Set(), genres = new Set();
-
       stations.forEach(s => {
         if (s.countrycode) countries.add(s.countrycode);
-        (s.tags||"").split(",").map(t=>t.trim()).filter(Boolean)
-                         .forEach(t=>genres.add(t));
+        (s.tags||"").split(",").map(t=>t.trim())
+          .filter(Boolean).forEach(t=>genres.add(t));
       });
-
-      // Append sorted
       Array.from(countries).sort().forEach(cc => {
         const opt = document.createElement("option");
         opt.value = cc;
@@ -216,24 +208,17 @@
         opt.textContent = t;
         gf.appendChild(opt);
       });
-
-      // Whenever a filter changes, re-run the last load
       [cf,gf].forEach(sel =>
         sel.addEventListener("change", () => {
-          // if AI result is showing, use that; else default name search
           const ai = document.getElementById("aiResult").textContent;
           if (ai) {
-            // re-use the displayed tags
             const tags = ai.match(/<strong>(.*)<\/strong>/)[1];
             loadAndRender({ query: tags, field: "tag" });
-          } else {
-            loadAndRender({ top: true });
-          }
+          } else loadAndRender({ top: true });
         })
       );
     }
 
-    // Render station cards
     function renderStations(stations) {
       const c = document.getElementById("results");
       c.innerHTML = "";
@@ -241,21 +226,15 @@
         c.innerHTML = "<p>No stations found. Try a broader search.</p>";
         return;
       }
-
       stations.forEach((s,i) => {
-        // upgrade http→https
         let url = s.url_resolved||"";
         if (url.startsWith("http://")) url = url.replace("http://","https://");
         if (!url.startsWith("https://")) return;
-
-        // build tags (max 5)
-        const tagArr = (s.tags||"").split(",").map(t=>t.trim()).filter(Boolean);
-        const disp   = tagArr.slice(0,5);
+        const tags = (s.tags||"").split(",").map(t=>t.trim()).filter(Boolean);
+        const disp = tags.slice(0,5);
         let tagsHTML = disp.map(t=>`<a class="tag">${t}</a>`).join(", ");
-        if (tagArr.length>5) tagsHTML += ", …";
-
+        if (tags.length>5) tagsHTML += ", …";
         const flag = countryCodeToFlag(s.countrycode);
-
         const card = document.createElement("div");
         card.className = "card";
         card.innerHTML = `
@@ -263,33 +242,23 @@
           <p class="meta">${flag} ${s.country||"Unknown"}</p>
           <audio controls src="${url}"></audio>
           <p class="now-playing">Now playing: —</p>
-          <p class="meta">
-            <strong>Clicks:</strong> ${s.clickcount||0}
-            | <strong>Votes:</strong> ${s.votes||0}
-          </p>
-          <p class="meta">
-            <strong>Bitrate:</strong> ${s.bitrate||"?"} kbps
-            | <strong>Codec:</strong> ${s.codec||"n/a"}
-          </p>
+          <p class="meta"><strong>Clicks:</strong> ${s.clickcount||0} | <strong>Votes:</strong> ${s.votes||0}</p>
+          <p class="meta"><strong>Bitrate:</strong> ${s.bitrate||"?"} kbps | <strong>Codec:</strong> ${s.codec||"n/a"}</p>
           <p class="meta"><strong>Tags:</strong> ${tagsHTML||"—"}</p>
         `;
         c.appendChild(card);
       });
-
-      // Twemoji for flags
+      // Twemoji flags from CDNJS
       twemoji.parse(document.body, {
         base:   "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/",
         folder: "svg",
         ext:    ".svg"
       });
-
-      // Only one stream at a time
+      // one‐stream‐at‐a‐time
       const auds = document.querySelectorAll("audio");
-      auds.forEach(a =>
-        a.addEventListener("play", () =>
-          auds.forEach(o=>{ if(o!==a) o.pause(); })
-        )
-      );
+      auds.forEach(a => a.addEventListener("play", () =>
+        auds.forEach(o=>{ if(o!==a) o.pause(); })
+      ));
     }
   </script>
 </body>
