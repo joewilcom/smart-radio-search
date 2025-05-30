@@ -140,12 +140,10 @@
       <button id="search-button">Search</button>
 
       <select id="country-filter">
-        <option value="">All Countries</option>
-      </select>
+        <option value="ALL">All Countries</option> </select>
 
       <select id="genre-filter">
-        <option value="">All Genres</option>
-      </select>
+        <option value="ALL">All Genres</option> </select>
 
       <select id="sort-filter">
         <option value="votes">Votes ↓</option>
@@ -161,13 +159,12 @@
 
   <main>
     <div id="stations">
-      <!-- station cards get injected here -->
-    </div>
+      </div>
   </main>
 
   <script>
   (function(){
-    const API_BASE = 'https://simple-naomi-joewilcom-71ae2211.koyeb.app';
+    const API_BASE = 'https://simple-naomi-joewilcom-71ae2211.koyeb.app'; // Ensure this is your correct Koyeb backend URL
     const COMMON_GENRES = [
       'pop','rock','jazz','classical','hip hop','electronic',
       'dance','country','blues','reggae','metal','folk',
@@ -203,9 +200,10 @@
     window.addEventListener('DOMContentLoaded', async ()=>{
       populateGenres();
       await fetchCountries();
-      await runSearch({ top: true });
+      await runSearch({ top: true }); // Load top stations by default
     });
 
+    // fill static genres
     function populateGenres(){
       COMMON_GENRES.sort().forEach(g=>{
         const o = document.createElement('option');
@@ -215,193 +213,236 @@
       });
     }
 
+    // fetch full country list
     async function fetchCountries(){
       try {
         const res = await fetch(`${API_BASE}/countries`);
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         const list = await res.json();
         list.forEach(c=>{
           const o = document.createElement('option');
-          o.value = c.code;
-          o.textContent = `${c.code.toLowerCase()} ${c.name}`;
+          o.value = c.code; // e.g. US
+          o.textContent = `${c.name} (${c.code.toUpperCase()})`; // Display name and code
           countrySel.append(o);
         });
       } catch(e){
         console.warn('Country fetch failed', e);
+        // Optionally display a user-friendly error message
       }
     }
 
-    // ─── runSearch with 2️⃣-step + multi-word fallback ─────────────────────────
+    // ─── Two-step runSearch: name + AI tags, then fallback ────────────────────
     async function runSearch(opts = {}) {
       aiResultEl.textContent = '';
       stationsDiv.innerHTML = '<p>Loading…</p>';
 
-      // build base payload
-      let payload = { filter_dead: true, sort_by: sortSel.value, ...opts };
+      // Base payload. `filter_dead` is not a param for our backend.
+      // `sort_by` is handled by your Radio API directly, if supported, or by sorting results client-side if needed.
+      // Your backend currently doesn't use sort_by from payload directly. Sort happens via Radio API params.
+      let payload = { 
+        top: opts.top || false, // For fetching top stations
+        // sort_by: sortSel.value // Your backend doesn't currently consume this. Sorting is by RadioAPI params.
+      }; 
       let stations = [];
 
-      if (!opts.top) {
-        const text = searchInput.value.trim();
-        if (text) {
-          // 1) always do a name search
-          payload.name = text;
+      const searchText = searchInput.value.trim();
+      
+      if (payload.top) {
+        // For 'top' searches, we don't usually send name, tagList, or countrycode
+        // The backend /search route handles 'top:true' by hitting a specific Radio API endpoint
+      } else {
+        // For regular searches (not 'top')
+        if (searchText) {
+          payload.name = searchText; // Send the raw text as 'name'
 
-          // 2) ask AI for tags
+          // Try AI tags
           try {
-            const r = await fetch(`${API_BASE}/ai-query`, {
+            const aiResp = await fetch(`${API_BASE}/ai-query`, {
               method:'POST',
               headers:{ 'Content-Type':'application/json' },
-              body: JSON.stringify({ query: text })
+              body: JSON.stringify({ query: searchText })
             });
-            const js = await r.json();
-            if (js.tags) {
+            if (!aiResp.ok) throw new Error(`AI Query HTTP error! status: ${aiResp.status}`);
+            const aiJson = await aiResp.json();
+            if (aiJson.tags) {
               aiResultEl.innerHTML =
-                'AI suggested tags: <strong>'+js.tags+'</strong>';
-              payload.tagList = js.tags;
+                'AI suggested tags: <strong>'+aiJson.tags+'</strong>';
+              payload.tagList = aiJson.tags; // AI tags will be used by the backend
             }
           } catch(e){
-            console.warn('AI refine failed, using name only', e);
+            console.warn('AI refine failed, using name only for tags potentially', e);
+            aiResultEl.textContent = 'AI query failed. Using general search.';
           }
         }
 
-        // genre
-        if (!payload.name && genreSel.value) {
+        // If a genre is selected from the dropdown and AI didn't provide tags (or to supplement/override)
+        // Your backend logic currently prioritizes tagList if present.
+        // If AI provides tags, this genreSel.value for tagList might be redundant unless AI fails.
+        // Let's ensure tagList is set if genre dropdown is used and AI tags are empty.
+        if (genreSel.value && genreSel.value !== "ALL" && !payload.tagList) {
           payload.tagList = genreSel.value;
         }
-        // country
-        if (countrySel.value) {
+        
+        // Country filter
+        if (countrySel.value && countrySel.value !== "ALL") {
           payload.countrycode = countrySel.value;
         }
       }
+      
+      // Add sorting preference - your backend will pass this to Radio-Browser if it's a supported param there
+      // The Radio Browser API documentation should be checked for how it handles sorting.
+      // The '/stations/search' endpoint supports 'order' (name, stationcount, votes, clicks, bitrate, lastchangetime, random)
+      // and 'reverse' (true/false). Let's adapt to that.
+      // Your backend currently doesn't dynamically add these from payload for the search endpoint.
+      // The topclick endpoint is already sorted. For search, we'd need to modify backend or sort client-side.
+      // For now, payload might carry this intent if backend is updated.
+      // payload.order = sortSel.value; // e.g. 'votes'
+      // payload.reverse = true; // Assuming all your sorts are descending
 
-      // first attempt
       try {
-        const r = await fetch(`${API_BASE}/search`, {
+        const r1 = await fetch(`${API_BASE}/search`, {
           method:'POST',
           headers:{ 'Content-Type':'application/json' },
           body: JSON.stringify(payload)
         });
-        stations = await r.json();
+        if (!r1.ok) {
+          const errorData = await r1.json().catch(() => ({})); // Try to get error details
+          throw new Error(`Primary search HTTP error! status: ${r1.status}. ${errorData.error || ''} ${errorData.details || ''}`);
+        }
+        stations = await r1.json();
       } catch(e){
-        console.error('primary search failed', e);
+        console.error('Primary search failed', e);
+        stationsDiv.innerHTML = `<p>Error fetching stations: ${e.message}. Please try again.</p>`;
+        return; // Stop further processing
       }
 
-      // ─── ZERO-RESULT FALLBACKS ────────────────────────────────────────────────
-      if ((!stations || stations.length === 0) && !opts.top) {
-        // A) if we used AI tags, retry with name-only
-        if (payload.tagList && payload.name) {
-          console.info('No AI-tagged results, retrying name-only');
-          delete payload.tagList;
-          try {
-            const r2 = await fetch(`${API_BASE}/search`, {
-              method:'POST',
-              headers:{ 'Content-Type':'application/json' },
-              body: JSON.stringify(payload)
-            });
-            stations = await r2.json();
-          } catch(e){
-            console.error('fallback name-only failed', e);
+      // Fallback logic: If zero results AND AI tags were used AND a name was searched
+      // The backend now uses 'searchterm' if 'name' is present but 'tagList' from AI is not.
+      // This client-side fallback might be less necessary with the improved backend logic,
+      // but we can keep it for scenarios where AI tags were very specific and restrictive.
+      if ((!stations || stations.length === 0) && payload.tagList && payload.name) {
+        console.info('No AI-tagged results, retrying with name as primary search term (if backend didnt already do broad search)');
+        const fallbackPayload = { ...payload };
+        delete fallbackPayload.tagList; // Remove AI tags
+        // Backend will now use payload.name as 'searchterm' if tagList is absent.
+        // Or, if we want to explicitly tell backend to use name as 'name' (less broad):
+        // fallbackPayload.name = payload.name (already there)
+
+        try {
+          const r2 = await fetch(`${API_BASE}/search`, {
+            method:'POST',
+            headers:{ 'Content-Type':'application/json' },
+            body: JSON.stringify(fallbackPayload) // Send payload without AI's tagList
+          });
+          if (!r2.ok) {
+            const errorData = await r2.json().catch(() => ({}));
+            throw new Error(`Fallback search HTTP error! status: ${r2.status}. ${errorData.error || ''} ${errorData.details || ''}`);
           }
-        }
-        // B) if still zero and the original query had >1 word, retry using those words as tags
-        if ((!stations || stations.length === 0) && payload.name && payload.name.includes(' ')) {
-          console.info('No name-only results, retrying keywords-as-tags');
-          const keywords = payload.name
-            .split(/\s+/)
-            .map(w=>w.toLowerCase())
-            .filter(Boolean);
-          delete payload.name;
-          payload.tagList = keywords.join(',');
-          aiResultEl.innerHTML =
-            'Fallback tags: <strong>'+keywords.join(', ')+'</strong>';
-          try {
-            const r3 = await fetch(`${API_BASE}/search`, {
-              method:'POST',
-              headers:{ 'Content-Type':'application/json' },
-              body: JSON.stringify(payload)
-            });
-            stations = await r3.json();
-          } catch(e){
-            console.error('fallback keywords-as-tags failed', e);
+          stations = await r2.json();
+          if (stations.length > 0) {
+            aiResultEl.innerHTML = 'AI suggested tags yielded no results. Showing results for general search: <strong>'+payload.name+'</strong>';
           }
+        } catch(e){
+          console.error('Fallback name-only search failed', e);
+          // Potentially update UI to reflect fallback failure too
         }
+      }
+      
+      // Client-side sorting based on sortSel.value, as backend doesn't implement it from payload yet for /search
+      if (Array.isArray(stations) && stations.length > 0) {
+        const sortBy = sortSel.value; // 'votes', 'clickcount', 'bitrate'
+        stations.sort((a, b) => {
+          // Ensure values are numbers for proper sorting; default to 0 if not present
+          const valA = Number(a[sortBy]) || 0;
+          const valB = Number(b[sortBy]) || 0;
+          return valB - valA; // Descending order
+        });
       }
 
       renderStations(Array.isArray(stations) ? stations : []);
     }
 
+    // render
     function renderStations(list){
-      if (!list.length) {
-        stationsDiv.innerHTML = '<p>No stations found.</p>';
+      if(!list.length){
+        stationsDiv.innerHTML = '<p>No stations found. Try a different search or broader filters.</p>';
         return;
       }
-      stationsDiv.innerHTML = '';
-      list.forEach((st,i)=> createCard(st, i+1));
+      stationsDiv.innerHTML = ''; // Clear previous results or "Loading..."
+      list.forEach((st,i)=> createCard(st,i+1));
     }
 
-    function createCard(st, rank){
+    // create a card
+    function createCard(st,rank){
       const card = document.createElement('div');
       card.className = 'station-card';
 
-      // title
       const h2 = document.createElement('h2');
-      h2.textContent = `#${rank} ${st.name}`;
+      h2.textContent = `#${rank} ${st.name || 'Unknown Station'}`; // Handle missing name
       card.append(h2);
 
-      // country + flag
       const ctr = document.createElement('div');
       ctr.className = 'country';
       if (st.countrycode) {
         const img = document.createElement('img');
         img.className = 'flag';
-        img.src = `https://flagcdn.com/1x1/${st.countrycode.toLowerCase()}.svg`;
-        img.onerror = ()=>img.remove();
+        // Use a reliable flag CDN, ensure country codes are lowercase
+        img.src = `https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/3.5.0/flags/4x3/${st.countrycode.toLowerCase()}.svg`;
+        img.alt = st.countrycode; // Alt text for accessibility
+        img.onerror = ()=>{ /*img.style.display='none';*/ img.remove(); }; // Hide if flag fails to load
         ctr.append(img);
       }
-      ctr.append(document.createTextNode(st.country||''));
+      ctr.append(document.createTextNode(st.country||'Unknown Country')); // Handle missing country
       card.append(ctr);
 
-      // audio
       const audio = document.createElement('audio');
       audio.controls = true;
       audio.src = st.url_resolved || st.url;
+      audio.preload = 'none'; // <<< MODIFICATION: Set preload to 'none'
       audio.addEventListener('play', ()=>{
-        if (currentAudio && currentAudio !== audio) currentAudio.pause();
+        if(currentAudio && currentAudio!==audio) currentAudio.pause();
         currentAudio = audio;
       });
       card.append(audio);
 
-      // stats
       const stats = document.createElement('div');
       stats.className = 'stats';
-      stats.innerHTML = `
-        <em>Now playing: —</em>
-        Clicks: ${st.clickcount} | Votes: ${st.votes}<br>
-        Bitrate: ${st.bitrate} kbps | Codec: ${st.codec}
+      // Basic "Now playing" - actual track info is hard for generic streams
+      // Provide default values if station data is missing
+      stats.innerHTML = ` 
+        <em>Now playing: — (Live stream)</em> 
+        Clicks: ${st.clickcount || 0} | Votes: ${st.votes || 0}<br>
+        Bitrate: ${st.bitrate || 0} kbps | Codec: ${st.codec || 'N/A'}
       `;
       card.append(stats);
 
-      // tags
       if (st.tags) {
         const tg = document.createElement('div');
         tg.className = 'tags';
-        const tags = st.tags
-          .split(/,|\s+/)
-          .map(t=>t.trim())
-          .filter(Boolean)
-          .slice(0,5);
-        tg.innerHTML = 'Tags: ' + tags.map(t=>
-          `<a href="#" data-tag="${t}">${t}</a>`
-        ).join(', ') + (st.tags.split(',').length>5?' …':'');
-        tg.querySelectorAll('a').forEach(a=>{
-          a.addEventListener('click', e=>{
-            e.preventDefault();
-            genreSel.value = a.dataset.tag;
-            runSearch();
+        // Ensure tags is a string before splitting, handle potential empty tags string
+        const tagsArray = (st.tags || '').split(/,|\s+/).map(t=>t.trim()).filter(Boolean).slice(0,5);
+        if (tagsArray.length > 0) {
+          tg.innerHTML = 'Tags: ' + tagsArray.map(t=>
+            `<a href="#" data-tag="${t}">${t}</a>`
+          ).join(', ') + ((st.tags || '').split(',').length > 5 ? ' …' : '');
+          
+          tg.querySelectorAll('a').forEach(a=>{
+            a.addEventListener('click', e=>{
+              e.preventDefault();
+              searchInput.value = ''; // Clear search input
+              genreSel.value = a.dataset.tag; // Set genre filter to the clicked tag
+              // Check if the tag is a common genre, otherwise it might not be in genreSel
+              if (!COMMON_GENRES.includes(a.dataset.tag.toLowerCase())) {
+                 // If it's not a common genre, maybe put it in search input?
+                 searchInput.value = a.dataset.tag;
+                 genreSel.value = "ALL"; // Reset genre dropdown if using search input
+              }
+              runSearch(); // Run search with the new genre/search term
+            });
           });
-        });
-        card.append(tg);
+          card.append(tg);
+        }
       }
-
       stationsDiv.append(card);
     }
 
