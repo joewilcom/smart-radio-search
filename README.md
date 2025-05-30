@@ -1,153 +1,144 @@
-# Smart Radio Search v1.3
+# Smart Radio Search
 
-Smart Radio Search is a web-based app for discovering, previewing, and playing streaming radio stations around the world. It uses a Flask-powered backend to proxy the [Radio Browser API](https://www.radio-browser.info/) and a vanilla-JS frontend with AI-assisted tagging and a responsive grid layout.
+Discover, preview, and play streaming radio stations from around the world with AI-powered genre tagging, live filtering, and one-at-a-time playback.
 
----
+**Live Demo:** [https://joewilcom.github.io/smart-radio-search/](https://joewilcom.github.io/smart-radio-search/)
 
-## 🔥 Highlights & Features
+## Features
 
-* **Search by name, genre, location or tags**
-* **AI-powered tag refinement**: input “rock edm” → backend returns “rock, edm” tags
-* **Multi-term queries**: splits on spaces (names) or commas (tags) and merges results
-* **Top 10 on load**: shows the 10 most popular stations by click count
-* **One-at-a-time audio playback**: starting a new station auto-pauses any playing stream
-* **Responsive CSS grid** of station cards (min-width 300px)
-* **Country flags** rendered via Twemoji for cross-browser consistency
-* **Clickable tags**: click any tag to rerun a search for that genre
-* **Enter-to-search**: press Enter in the input box to trigger a query
-* **Dark/light mode toggle**
-* **Tag truncation**: shows up to 5 tags per station, with “…” if more
-* **Filters out dead streams** & upgrades `http://` URLs to `https://` where possible.
+* **Global Radio Discovery:** Access a wide range of internet radio stations via the Radio Browser API.
+* **AI-Powered Search:** Type natural language queries (e.g., "80s rock classics usa", "relaxing jazz from France"). The backend uses OpenAI (GPT-3.5 Turbo) to extract relevant search tags (genres, countries, keywords).
+* **Filter by Controls:**
+    * Search by station name or keywords.
+    * Filter by country.
+    * Filter by common genres.
+    * Sort results by votes, clicks, or bitrate (client-side sorting).
+* **Instant Preview:** Listen to radio streams directly within the app.
+* **One-at-a-Time Playback:** Only one audio stream plays at a time.
+* **Dark Mode:** Toggle between light and dark themes for comfortable viewing.
+* **Responsive Design:** Works on various screen sizes.
+* **Dynamic Station Cards:** Displays station name, country (with flag), current playback status (stubbed "Now playing"), click/vote stats, bitrate, codec, and clickable tags.
 
----
+## Technology Stack
 
-## 🚀 Project Structure
+* **Frontend:**
+    * HTML5
+    * CSS3 (with CSS Variables for theming)
+    * JavaScript (Vanilla JS, ES6+)
+* **Backend:**
+    * Python 3
+    * Flask (Web framework)
+    * Flask-CORS (Handles Cross-Origin Resource Sharing)
+* **APIs & Services:**
+    * **Radio Browser API:** Provides the database of radio stations.
+    * **OpenAI API (gpt-3.5-turbo):** Powers the AI search query understanding.
+    * **Flag CDN:** For displaying country flags.
+* **Deployment:**
+    * **Frontend:** GitHub Pages
+    * **Backend:** Koyeb (or any platform supporting Python/Flask deployment)
+
+## Project Structure
+
+A brief overview of key files and folders:
 
 ```
-smart-radio-search/
-├── backend/                  # Flask API proxy (POST /ai-query, POST /search)
-│   └── app.py
-├── docs/                     # Frontend (HTML/CSS/JS, uses twemoji.min.js)
-│   └── index.html
-├── Dockerfile                # Builds combined frontend+backend container
-├── fly.toml                  # Fly.io configuration
-└── README.md                 # This file
+├── smart-radio-search/   # (If this folder is used for GitHub Pages root)
+│   └── index.html        # Main frontend file (HTML, CSS, JS)
+├── backend/              # (If backend code is organized here)
+│   ├── app.py            # Flask backend application
+│   ├── requirements.txt  # Python dependencies
+│   └── .env              # Local environment variables (OpenAI API Key) - DO NOT COMMIT
+├── index.html            # Or if at root for GitHub Pages
+├── app.py                # Or if Flask app is at root
+├── requirements.txt      # Or if at root
+├── .env                  # Or if at root (for local dev)
+├── Dockerfile            # For containerized deployment (optional for Koyeb basic deploys)
+└── README.md             # This file
 ```
+## How It Works
 
----
+1.  **Frontend (`index.html`):** The user interacts with the web interface to search for radio stations.
+    * On load, it fetches a list of countries and top radio stations.
+    * When a search is initiated (e.g., typing "upbeat pop" or selecting filters):
+        * The text query is sent to the backend's `/ai-query` endpoint.
+2.  **AI Query Processing (Backend `/ai-query` in `app.py`):**
+    * This endpoint receives the text query.
+    * It calls the OpenAI API to parse the query and extract relevant search tags (e.g., genres, location keywords).
+    * It returns these tags to the frontend.
+3.  **Station Search (Backend `/search` in `app.py`):**
+    * The frontend makes another request to the `/search` endpoint, sending the original search text, any AI-generated tags, and selected filters (country, genre dropdowns).
+    * The backend constructs a query for the **Radio Browser API** using these parameters.
+        * If AI tags are present, they are used for `tagList`.
+        * If only a text search term is present (no AI tags), it's used as a broader `searchterm`.
+        * Country codes and specific station names are also used if provided.
+    * Results from the Radio Browser API are returned to the frontend.
+4.  **Displaying Results (Frontend):**
+    * The stations are displayed as cards, each with an HTML `<audio>` player.
+    * Audio `preload` is set to `none` to minimize initial network traffic.
+    * The app ensures only one audio stream plays at a time.
+5.  **Audio Proxy (Backend `/proxy` in `app.py`):**
+    * A simple proxy endpoint is available in the backend. While not currently used for the main audio playback in `index.html` (audio `src` is directly from Radio Browser API results), it can be used to circumvent potential CORS or mixed-content issues with certain streams if needed in the future.
 
-## 🛠 Tech Stack
+## Setup and Installation (Local Development)
 
-* **Frontend**: HTML, CSS, JavaScript
-* **Backend**: Python, Flask, Flask-CORS
-* **AI-tagging**: OpenAI gpt-3.5-turbo
-* **Data source**: [Radio Browser API](https://www.radio-browser.info/)
-* **Hosting**: Fly.io (Docker)
-* **Emoji**: Twemoji for flags
+To run this project locally, you'll need Python 3.x and an OpenAI API Key.
 
----
+1.  **Clone the repository:**
+    ```bash
+    git clone <your-repository-url>
+    cd <repository-folder-name>
+    ```
 
-## 💻 Local Development
+2.  **Backend Setup (`app.py`):**
+    *(Assuming `app.py` and `requirements.txt` are at the project root. If they are in a `backend/` subfolder, `cd` into it first or adjust paths.)*
 
-1. **Clone the repo**
+    * **Create and activate a Python virtual environment:**
+        ```bash
+        python -m venv venv
+        # On Windows
+        .\venv\Scripts\activate
+        # On macOS/Linux
+        source venv/bin/activate
+        ```
+    * **Install dependencies:**
+        ```bash
+        pip install -r requirements.txt
+        ```
+    * **Set up environment variables:**
+        Create a file named `.env` in the same directory as `app.py`. Add your OpenAI API key to it:
+        ```
+        OPENAI_API_KEY=sk-yourActualOpenAiApiKeyHere
+        FLASK_DEBUG=True
+        ```
+        **Important:** Add `.env` to your `.gitignore` file to prevent committing your API key.
+    * **Run the Flask backend server:**
+        ```bash
+        python app.py
+        ```
+        The backend should now be running, typically on `http://127.0.0.1:5000/`.
 
-   ```bash
-   git clone https://github.com/your-username/smart-radio-search.git
-   cd smart-radio-search
-   ```
+3.  **Frontend Setup (`index.html`):**
+    * **Configure API Base URL (if needed):**
+        Open `index.html` in your text editor. Find the line:
+        `const API_BASE = 'https://simple-naomi-joewilcom-71ae2211.koyeb.app';`
+        For local testing against your local backend, change this to:
+        `const API_BASE = 'http://127.0.0.1:5000';`
+        Remember to change it back to your deployed Koyeb URL when committing for the live version.
+    * **Open in browser:**
+        Open the `index.html` file directly in your web browser.
 
-2. **Backend** (optional, uses remote backend by default)
+## Deployment
 
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   python app.py
-   ```
+* **Frontend (GitHub Pages):**
+    * The `index.html` file (and any other static assets if you add them) can be deployed using GitHub Pages.
+    * Ensure your GitHub repository is configured to serve from the appropriate branch and folder.
+    * The `API_BASE` constant in `index.html` must point to your deployed backend URL.
+* **Backend (Koyeb):**
+    * The Flask application (`app.py`) is deployed to Koyeb.
+    * Koyeb can typically build and deploy from `requirements.txt`. If you use a `Dockerfile`, ensure it's configured correctly.
+    * **Crucially, set the `OPENAI_API_KEY` environment variable in your Koyeb service settings.**
+    * The backend includes `Flask-CORS` to allow requests from your GitHub Pages URL (`https://joewilcom.github.io`).
 
-   * Runs on `http://localhost:5000`
+## Contributing
 
-3. **Frontend**
-
-   ```bash
-   cd docs
-   python -m http.server 8000
-   ```
-
-   * Open [http://localhost:8000](http://localhost:8000) in your browser
-
----
-
-## ☁️ Production Deployment
-
-We combine frontend + backend into a single Docker container:
-
-```bash
-# First-time only:
-fly launch
-
-# Deploy:
-fly deploy
-```
-
-* Your app will be live at `https://<your-app>.fly.dev`
-* Check logs with `fly logs`
-
----
-
-## 📡 API Endpoints
-
-### POST `/ai-query`
-
-* **Request**
-
-  ```json
-  { "query": "classic rock" }
-  ```
-* **Response**
-
-  ```json
-  { "tags": "classic rock, rock, retro" }
-  ```
-
-### POST `/search`
-
-* **Request**
-
-  ```json
-  {
-    "query": "rock",
-    "filter_dead": true,
-    "sort_by": "votes",
-    "field": "name"        // or "tag"
-  }
-  ```
-* **For top stations**
-
-  ```json
-  { "top": true, "filter_dead": true, "sort_by": "clickcount" }
-  ```
-* **Response**
-  Array of station objects with:
-
-  * `stationuuid`, `name`, `url_resolved`
-  * `country`, `countrycode`
-  * `bitrate`, `codec`, `tags`, `votes`, `clickcount`
-
----
-
-## ⭐ Future Ideas
-
-* Persist user favorites (localStorage or login)
-* Station logos & waveforms
-* Infinite scroll / “Load more”
-* Mobile-first refinements
-* Analytics on search trends
-* i18n / translation support
-
----
-
-## 🙏 Credits
-
-Powered by OpenAI, Flask, Radio Browser API, and Twemoji.
-
-Feel free to fork, file issues, and submit PRs!
+Feel free to fork this project, make improvements, and submit pull requests. If you find any issues or have suggestions, please open an issue.
