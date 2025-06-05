@@ -14,7 +14,7 @@ ENV FLASK_APP=backend/app.py
 ENV FLASK_RUN_PORT=8080
 ENV OPENAI_API_KEY=""
 
-# Expose port for Koyeb
+# Expose port for Fly.io
 EXPOSE 8080
 
 # Run the app
