@@ -8,6 +8,7 @@ Discover, preview, and play streaming radio stations from around the world with 
 
 * **Global Radio Discovery:** Access a wide range of internet radio stations via the Radio Browser API.
 * **AI-Powered Search:** Type natural language queries (e.g., "80s rock classics usa", "relaxing jazz from France"). The backend uses OpenAI (GPT-3.5 Turbo) to extract relevant search tags (genres, countries, keywords).
+* **AI Station Summaries:** Short descriptions for each station generated on demand via OpenAI.
 * **Filter by Controls:**
     * Search by station name or keywords.
     * Filter by country.
@@ -17,7 +18,7 @@ Discover, preview, and play streaming radio stations from around the world with 
 * **One-at-a-Time Playback:** Only one audio stream plays at a time.
 * **Dark Mode:** Toggle between light and dark themes for comfortable viewing.
 * **Responsive Design:** Works on various screen sizes.
-* **Dynamic Station Cards:** Displays station name, country (with flag), current playback status (stubbed "Now playing"), click/vote stats, bitrate, codec, and clickable tags.
+* **Dynamic Station Cards:** Displays station name, country (with flag), a short AI-generated station summary, click/vote stats, bitrate, codec, and clickable tags.
 
 ## Technology Stack
 
@@ -137,7 +138,7 @@ To run this project locally, you'll need Python 3.x and an OpenAI API Key.
     * The Flask application (`app.py`) is deployed to Koyeb.
     * Koyeb can typically build and deploy from `requirements.txt`. If you use a `Dockerfile`, ensure it's configured correctly.
     * **Crucially, set the `OPENAI_API_KEY` environment variable in your Koyeb service settings.**
-    * The backend includes `Flask-CORS` to allow requests from your GitHub Pages URL (`https://joewilcom.github.io`).
+    * The backend uses `Flask-CORS` and is configured to allow requests from any origin for easier local testing. Adjust this in `app.py` if you need stricter rules.
 
 ## Contributing
 
