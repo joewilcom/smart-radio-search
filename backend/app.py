@@ -200,9 +200,20 @@ def summary():
 
 
 
+BASE_CHAT_SYSTEM_MESSAGE = {
+    "role": "system",
+    "content": (
+        "You are a helpful assistant that recommends internet radio stations. "
+        "When the user mentions a genre, artist, or mood, suggest a short list "
+        "of stations that might match, including country or region when known. "
+        "Keep replies brief. If unsure, advise how to search."
+    ),
+}
+
+
 @app.route("/chat", methods=["POST"])
 def chat():
-    """Simple natural-language chat endpoint using OpenAI."""
+    """Return a conversational reply with station suggestions."""
     if not client or not client.api_key:
         return jsonify({"answer": ""})
 
@@ -210,6 +221,9 @@ def chat():
     messages = data.get("messages") or []
     if not isinstance(messages, list):
         messages = []
+
+    if not messages or messages[0].get("role") != "system":
+        messages = [BASE_CHAT_SYSTEM_MESSAGE] + messages
 
     try:
         completion = client.chat.completions.create(
