@@ -32,7 +32,20 @@ def countries():
     try:
         resp = requests.get(f"{RADIO_API}/countries", timeout=10)
         resp.raise_for_status()
+
         data = resp.json()
+=======
+        countries_data = resp.json()
+        result = [
+            {
+                "code": c.get("iso_3166_1", "").upper(),
+                "name": c.get("name", ""),
+            }
+            for c in countries_data
+            if c.get("iso_3166_1") and c.get("name")
+        ]
+        result.sort(key=lambda x: x["name"])
+        return jsonify(result)
     except requests.exceptions.RequestException as e:
         print(f"Error fetching countries: {e}")
         data = []
@@ -197,6 +210,7 @@ def summary():
         return jsonify({"summary": ""})
 
 
+
 @app.route("/chat", methods=["POST"])
 def chat():
     """Simple natural-language chat endpoint using OpenAI."""
@@ -220,6 +234,7 @@ def chat():
     except Exception as e:
         print(f"Error during chat: {e}")
         return jsonify({"answer": ""})
+
 
 
 @app.route("/proxy")
@@ -260,4 +275,7 @@ if __name__ == "__main__":
     # The port is determined by Koyeb's PORT environment variable or defaults to 5000
     app.run(debug=os.environ.get("FLASK_DEBUG", "False").lower() == "true",
             host="0.0.0.0",
+=======
+    app.run(debug=os.environ.get("FLASK_DEBUG", "False").lower() == "true", 
+            host="0.0.0.0", 
             port=int(os.environ.get("PORT", 5000)))

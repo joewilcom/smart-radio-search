@@ -9,7 +9,6 @@ Discover, preview, and play streaming radio stations from around the world with 
 * **Global Radio Discovery:** Access a wide range of internet radio stations via the Radio Browser API.
 * **AI-Powered Search:** Type natural language queries (e.g., "80s rock classics usa", "relaxing jazz from France"). The backend uses OpenAI (GPT-3.5 Turbo) to extract relevant search tags (genres, countries, keywords).
 * **AI Station Summaries:** Short descriptions for each station generated on demand via OpenAI.
-* **AI Chat Recommendations:** Talk with a simple chat box to get station ideas.
 * **Filter by Controls:**
     * Search by station name or keywords.
     * Filter by country.
