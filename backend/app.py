@@ -144,6 +144,49 @@ def ai_query():
         return jsonify({"tags": ""}) # Fallback to empty tags on any error
 
 
+@app.route("/summary", methods=["POST"])
+def summary():
+    """Return a short natural-language summary for a radio station."""
+    if not client or not client.api_key:
+        return jsonify({"summary": ""})
+
+    data = request.get_json() or {}
+    station = data.get("station") or {}
+
+    name = station.get("name", "")
+    country = station.get("country", "")
+    tags = station.get("tags", "")
+
+    prompt = (
+        "Create a brief enticing description for this internet radio station.\n"
+        f"Name: {name}\nCountry: {country}\nTags: {tags}\n"
+        "Summary:"
+    )
+
+    try:
+        completion = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You write short promotional summaries for internet radio stations."
+                        " Keep it under 30 words."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.7,
+            max_tokens=60,
+        )
+
+        summary_text = completion.choices[0].message.content.strip()
+        return jsonify({"summary": summary_text})
+    except Exception as e:
+        print(f"Error generating summary: {e}")
+        return jsonify({"summary": ""})
+
+
 @app.route("/proxy")
 def proxy():
     url = request.args.get("url")
