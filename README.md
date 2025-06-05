@@ -112,7 +112,7 @@ To run this project locally, you'll need Python 3.x and an OpenAI API Key.
     * **Set up environment variables:**
         Create a file named `.env` in the same directory as `app.py`. Add your OpenAI API key to it:
         ```
-        OPENAI_API_KEY=sk-yourActualOpenAiApiKeyHere
+        OPENAI_API_KEY=sk-yourActualOpenAIApiKeyHere
         FLASK_DEBUG=True
         ```
         **Important:** Add `.env` to your `.gitignore` file to prevent committing your API key.
