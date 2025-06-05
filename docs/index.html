@@ -175,6 +175,8 @@
         <option value="bitrate">Bitrate ↓</option>
       </select>
 
+      <button id="reset-button">Reset</button>
+
       <button id="toggle-dark">Toggle Dark Mode</button>
     </div>
 
@@ -209,6 +211,7 @@
     const genreSel     = document.getElementById('genre-filter');
     const sortSel      = document.getElementById('sort-filter');
     const toggleDark   = document.getElementById('toggle-dark');
+    const resetBtn     = document.getElementById('reset-button');
     const aiResultEl   = document.getElementById('ai-result');
     const chatInput    = document.getElementById('chat-input');
     const chatSend     = document.getElementById('chat-send');
@@ -216,6 +219,7 @@
     let chatHistory    = [];
     const stationsDiv  = document.getElementById('stations');
     let currentAudio = null;
+    let topTagsSet = new Set();
 
     // wire events
     toggleDark.addEventListener('click', ()=>{
@@ -229,6 +233,14 @@
     searchInput.addEventListener('keydown', e=>{
       if(e.key==='Enter') runSearch();
     });
+    resetBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      countrySel.value = 'ALL';
+      genreSel.value = 'ALL';
+      sortSel.value = 'votes';
+      aiResultEl.textContent = '';
+      runSearch({top: true});
+    });
     chatSend.addEventListener('click', runChat);
     chatInput.addEventListener('keydown', e=>{
       if(e.key==='Enter') runChat();
@@ -238,6 +250,7 @@
     window.addEventListener('DOMContentLoaded', async ()=>{
       populateGenres();
       await fetchCountries();
+      await fetchTopTags();
       await runSearch({ top: true }); // Load top stations by default
     });
 
@@ -266,6 +279,17 @@
       } catch(e){
         console.warn('Country fetch failed', e);
         // Optionally display a user-friendly error message
+      }
+    }
+
+    async function fetchTopTags(){
+      try{
+        const res = await fetch(`${API_BASE}/tags`);
+        if(!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        const list = await res.json();
+        topTagsSet = new Set(list.map(t => t.toLowerCase()));
+      }catch(e){
+        console.warn('Top tags fetch failed', e);
       }
     }
 
@@ -303,9 +327,12 @@
             if (!aiResp.ok) throw new Error(`AI Query HTTP error! status: ${aiResp.status}`);
             const aiJson = await aiResp.json();
             if (aiJson.tags) {
+              let parts = aiJson.tags.split(',').map(t=>t.trim().toLowerCase()).filter(Boolean);
+              const matched = parts.filter(t => topTagsSet.has(t));
+              const finalTags = matched.length > 0 ? matched.join(',') : parts.join(',');
               aiResultEl.innerHTML =
-                'AI suggested tags: <strong>'+aiJson.tags+'</strong>';
-              payload.tagList = aiJson.tags; // AI tags will be used by the backend
+                'AI suggested tags: <strong>'+finalTags+'</strong>';
+              payload.tagList = finalTags; // AI tags will be used by the backend
             }
           } catch(e){
             console.warn('AI refine failed, using name only for tags potentially', e);
@@ -461,7 +488,12 @@
         return p1
           .trim()
           .split(/\s+/)
-          .map(term => `<a href="#" class="chat-term" data-term="${term}">${term}</a>`)
+          .map(term => {
+            const t = term.toLowerCase();
+            return topTagsSet.has(t)
+              ? `<a href="#" class="chat-term" data-term="${term}">${term}</a>`
+              : term;
+          })
           .join(' ');
       });
       chatOutput.innerHTML = html;
