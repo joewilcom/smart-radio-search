@@ -84,6 +84,11 @@
       font-size: 0.9rem;
       white-space: pre-wrap;
     }
+    #chat-output a.chat-term {
+      color: var(--link);
+      text-decoration: underline;
+      cursor: pointer;
+    }
 
     /* ─── Stations Grid ─────────────────────────────────────────────────────── */
     #stations {
@@ -442,13 +447,29 @@
         const j = await r.json();
         if(j.answer){
           chatHistory.push({ role:'assistant', content:j.answer });
-          chatOutput.textContent = j.answer;
+          renderChatAnswer(j.answer);
         } else {
           chatOutput.textContent = 'No answer.';
         }
       }catch(e){
         chatOutput.textContent = 'Error: '+e.message;
       }
+    }
+
+    function renderChatAnswer(text){
+      let html = text.replace(/"([^\"]+)"/g, (m,p1)=>{
+        const term = p1.trim();
+        return `<a href="#" class="chat-term" data-term="${term}">${term}</a>`;
+      });
+      chatOutput.innerHTML = html;
+      chatOutput.querySelectorAll('a.chat-term').forEach(a=>{
+        a.addEventListener('click', e=>{
+          e.preventDefault();
+          searchInput.value = a.dataset.term;
+          genreSel.value = 'ALL';
+          runSearch();
+        });
+      });
     }
 
 
