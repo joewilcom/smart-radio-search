@@ -15,6 +15,26 @@ CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 RADIO_API = "https://all.api.radio-browser.info/json"
 
+# Cache top tags from the Radio Browser API
+TOP_TAGS = None
+
+def fetch_top_tags(limit: int = 200):
+    """Fetch and cache the most common tags."""
+    global TOP_TAGS
+    if TOP_TAGS is None:
+        try:
+            resp = requests.get(
+                f"{RADIO_API}/tags",
+                params={"limit": limit, "order": "stationcount", "reverse": "true"},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            TOP_TAGS = [t.get("name", "").lower() for t in resp.json() if t.get("name")]
+        except Exception as e:
+            print(f"Error fetching top tags: {e}")
+            TOP_TAGS = []
+    return TOP_TAGS
+
 # Initialize OpenAI client
 # The API key is automatically read from the OPENAI_API_KEY environment variable
 try:
@@ -58,6 +78,12 @@ def countries():
     ]
     result.sort(key=lambda x: x["name"])
     return jsonify(result)
+
+
+@app.route("/tags")
+def tags():
+    """Return the top tags for front-end helpers."""
+    return jsonify(fetch_top_tags())
 
 
 @app.route("/search", methods=["POST"])
@@ -146,7 +172,12 @@ def ai_query():
 
         # Clean up the tags: remove extra spaces, filter out empty tags if any from splitting
         tag_parts = [tag.strip().lower() for tag in extracted_tags.split(',')]
-        cleaned_tags = ','.join(filter(None, tag_parts)) # Filter out empty strings after strip
+        cleaned_parts = list(filter(None, tag_parts))
+
+        # Match against known top tags for better accuracy
+        top_tags = set(fetch_top_tags())
+        matched = [t for t in cleaned_parts if t in top_tags]
+        cleaned_tags = ','.join(matched if matched else cleaned_parts)
 
         # print(f"Extracted tags: '{cleaned_tags}'") # Uncomment for debugging
         return jsonify({"tags": cleaned_tags})
