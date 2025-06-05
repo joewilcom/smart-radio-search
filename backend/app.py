@@ -28,17 +28,21 @@ except Exception as e:
 
 @app.route("/countries")
 def countries():
+    """Return the full list of countries from Radio Browser."""
     try:
-        resp = requests.get(f"{RADIO_API}/stations/topclick/100", timeout=10) # Increased timeout slightly
+        resp = requests.get(f"{RADIO_API}/countries", timeout=10)
         resp.raise_for_status()
-        seen = {}
-        for s in resp.json():
-            code = s.get("countrycode")
-            name = s.get("country")
-            if code and name and code not in seen:
-                seen[code] = name
-        out = [{"code": c, "name": seen[c]} for c in sorted(seen, key=lambda k: seen[k])]
-        return jsonify(out)
+        countries_data = resp.json()
+        result = [
+            {
+                "code": c.get("iso_3166_1", "").upper(),
+                "name": c.get("name", ""),
+            }
+            for c in countries_data
+            if c.get("iso_3166_1") and c.get("name")
+        ]
+        result.sort(key=lambda x: x["name"])
+        return jsonify(result)
     except requests.exceptions.RequestException as e:
         print(f"Error fetching countries: {e}")
         return jsonify({"error": "Failed to fetch countries from Radio API"}), 502
@@ -138,6 +142,49 @@ def ai_query():
     except Exception as e:
         print(f"Error calling OpenAI API: {e}")
         return jsonify({"tags": ""}) # Fallback to empty tags on any error
+
+
+@app.route("/summary", methods=["POST"])
+def summary():
+    """Return a short natural-language summary for a radio station."""
+    if not client or not client.api_key:
+        return jsonify({"summary": ""})
+
+    data = request.get_json() or {}
+    station = data.get("station") or {}
+
+    name = station.get("name", "")
+    country = station.get("country", "")
+    tags = station.get("tags", "")
+
+    prompt = (
+        "Create a brief enticing description for this internet radio station.\n"
+        f"Name: {name}\nCountry: {country}\nTags: {tags}\n"
+        "Summary:"
+    )
+
+    try:
+        completion = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You write short promotional summaries for internet radio stations."
+                        " Keep it under 30 words."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.7,
+            max_tokens=60,
+        )
+
+        summary_text = completion.choices[0].message.content.strip()
+        return jsonify({"summary": summary_text})
+    except Exception as e:
+        print(f"Error generating summary: {e}")
+        return jsonify({"summary": ""})
 
 
 @app.route("/proxy")
