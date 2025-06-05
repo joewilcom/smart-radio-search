@@ -79,7 +79,11 @@ A brief overview of key files and folders:
     * The app ensures only one audio stream plays at a time.
 5.  **Chat Recommendations (Backend `/chat` in `app.py`):**
     * The chat box sends your conversation to this endpoint.
+
+    * The backend prepends a system prompt so OpenAI suggests useful search terms in quotes.
+=======
     * The backend prepends a system prompt so OpenAI suggests station names when possible.
+
     * The response appears below the chat field.
 6.  **Audio Proxy (Backend `/proxy` in `app.py`):**
     * A simple proxy endpoint is available in the backend. While not currently used for the main audio playback in `index.html` (audio `src` is directly from Radio Browser API results), it can be used to circumvent potential CORS or mixed-content issues with certain streams if needed in the future.
