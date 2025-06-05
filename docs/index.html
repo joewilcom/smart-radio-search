@@ -499,7 +499,7 @@
       const audio = document.createElement('audio');
       audio.controls = true;
       audio.src = st.url_resolved || st.url;
-      audio.preload = 'none'; // <<< MODIFICATION: Set preload to 'none'
+      audio.preload = 'none';
       audio.addEventListener('play', ()=>{
         if(currentAudio && currentAudio!==audio) currentAudio.pause();
         currentAudio = audio;
