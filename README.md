@@ -80,7 +80,11 @@ A brief overview of key files and folders:
 5.  **Chat Recommendations (Backend `/chat` in `app.py`):**
     * The chat box sends your conversation to this endpoint.
 
+
+    * The backend prepends a system prompt so OpenAI suggests useful search tags in double quotes. Each tag is a single word and becomes a clickable suggestion.
+=======
     * The backend prepends a system prompt so OpenAI suggests useful search terms in quotes and recommends station names when possible.
+
 
     * The response appears below the chat field.
 6.  **Audio Proxy (Backend `/proxy` in `app.py`):**
