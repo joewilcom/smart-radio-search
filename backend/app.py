@@ -9,8 +9,9 @@ from dotenv import load_dotenv # Added to load .env file for local development
 load_dotenv()
 
 app = Flask(__name__)
-# Allow requests from any origin so local testing works
-CORS(app, resources={r"/*": {"origins": "*"}})
+# Allow requests from any origin. "supports_credentials" helps with preflight
+# requests made by modern browsers.
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 RADIO_API = "https://all.api.radio-browser.info/json"
 
@@ -34,18 +35,6 @@ def countries():
         resp.raise_for_status()
 
         data = resp.json()
-=======
-        countries_data = resp.json()
-        result = [
-            {
-                "code": c.get("iso_3166_1", "").upper(),
-                "name": c.get("name", ""),
-            }
-            for c in countries_data
-            if c.get("iso_3166_1") and c.get("name")
-        ]
-        result.sort(key=lambda x: x["name"])
-        return jsonify(result)
     except requests.exceptions.RequestException as e:
         print(f"Error fetching countries: {e}")
         data = []
@@ -211,9 +200,20 @@ def summary():
 
 
 
+BASE_CHAT_SYSTEM_MESSAGE = {
+    "role": "system",
+    "content": (
+        "You are a helpful assistant that recommends internet radio stations. "
+        "When the user mentions a genre, artist, or mood, suggest a short list "
+        "of stations that might match, including country or region when known. "
+        "Keep replies brief. If unsure, advise how to search."
+    ),
+}
+
+
 @app.route("/chat", methods=["POST"])
 def chat():
-    """Simple natural-language chat endpoint using OpenAI."""
+    """Return a conversational reply with station suggestions."""
     if not client or not client.api_key:
         return jsonify({"answer": ""})
 
@@ -221,6 +221,9 @@ def chat():
     messages = data.get("messages") or []
     if not isinstance(messages, list):
         messages = []
+
+    if not messages or messages[0].get("role") != "system":
+        messages = [BASE_CHAT_SYSTEM_MESSAGE] + messages
 
     try:
         completion = client.chat.completions.create(
@@ -273,9 +276,8 @@ def proxy():
 if __name__ == "__main__":
     # The host must be 0.0.0.0 to be accessible externally (e.g., by Koyeb)
     # The port is determined by Koyeb's PORT environment variable or defaults to 5000
-    app.run(debug=os.environ.get("FLASK_DEBUG", "False").lower() == "true",
-            host="0.0.0.0",
-=======
-    app.run(debug=os.environ.get("FLASK_DEBUG", "False").lower() == "true", 
-            host="0.0.0.0", 
-            port=int(os.environ.get("PORT", 5000)))
+    app.run(
+        debug=os.environ.get("FLASK_DEBUG", "False").lower() == "true",
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 5000)),
+    )
