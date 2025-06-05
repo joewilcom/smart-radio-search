@@ -9,8 +9,9 @@ from dotenv import load_dotenv # Added to load .env file for local development
 load_dotenv()
 
 app = Flask(__name__)
-# Allow requests from any origin so local testing works
-CORS(app, resources={r"/*": {"origins": "*"}})
+# Allow requests from any origin. "supports_credentials" helps with preflight
+# requests made by modern browsers.
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 RADIO_API = "https://all.api.radio-browser.info/json"
 
