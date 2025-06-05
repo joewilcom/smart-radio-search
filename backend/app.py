@@ -187,6 +187,31 @@ def summary():
         return jsonify({"summary": ""})
 
 
+@app.route("/chat", methods=["POST"])
+def chat():
+    """Simple natural-language chat endpoint using OpenAI."""
+    if not client or not client.api_key:
+        return jsonify({"answer": ""})
+
+    data = request.get_json() or {}
+    messages = data.get("messages") or []
+    if not isinstance(messages, list):
+        messages = []
+
+    try:
+        completion = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=messages,
+            temperature=0.7,
+            max_tokens=120,
+        )
+        reply = completion.choices[0].message.content.strip()
+        return jsonify({"answer": reply})
+    except Exception as e:
+        print(f"Error during chat: {e}")
+        return jsonify({"answer": ""})
+
+
 @app.route("/proxy")
 def proxy():
     url = request.args.get("url")

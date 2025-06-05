@@ -9,6 +9,7 @@ Discover, preview, and play streaming radio stations from around the world with 
 * **Global Radio Discovery:** Access a wide range of internet radio stations via the Radio Browser API.
 * **AI-Powered Search:** Type natural language queries (e.g., "80s rock classics usa", "relaxing jazz from France"). The backend uses OpenAI (GPT-3.5 Turbo) to extract relevant search tags (genres, countries, keywords).
 * **AI Station Summaries:** Short descriptions for each station generated on demand via OpenAI.
+* **AI Chat Recommendations:** Talk with a simple chat box to get station ideas.
 * **Filter by Controls:**
     * Search by station name or keywords.
     * Filter by country.
@@ -77,7 +78,11 @@ A brief overview of key files and folders:
     * The stations are displayed as cards, each with an HTML `<audio>` player.
     * Audio `preload` is set to `none` to minimize initial network traffic.
     * The app ensures only one audio stream plays at a time.
-5.  **Audio Proxy (Backend `/proxy` in `app.py`):**
+5.  **Chat Recommendations (Backend `/chat` in `app.py`):**
+    * The chat box sends your conversation to this endpoint.
+    * OpenAI returns station suggestions or other helpful replies.
+    * The response appears below the chat field.
+6.  **Audio Proxy (Backend `/proxy` in `app.py`):**
     * A simple proxy endpoint is available in the backend. While not currently used for the main audio playback in `index.html` (audio `src` is directly from Radio Browser API results), it can be used to circumvent potential CORS or mixed-content issues with certain streams if needed in the future.
 
 ## Setup and Installation (Local Development)

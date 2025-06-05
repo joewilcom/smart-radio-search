@@ -66,6 +66,25 @@
       color: var(--link);
     }
 
+    .chat {
+      margin: 1rem 0;
+    }
+    .chat input,
+    .chat button {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.95rem;
+      border: 1px solid #aaa;
+      border-radius: 4px;
+    }
+    .chat button {
+      cursor: pointer;
+    }
+    #chat-output {
+      margin-top: 0.5rem;
+      font-size: 0.9rem;
+      white-space: pre-wrap;
+    }
+
     /* ─── Stations Grid ─────────────────────────────────────────────────────── */
     #stations {
       display: grid;
@@ -155,6 +174,12 @@
     </div>
 
     <p id="ai-result"></p>
+
+    <div class="chat">
+      <input id="chat-input" placeholder="Ask the AI for station ideas..." />
+      <button id="chat-send">Send</button>
+      <div id="chat-output"></div>
+    </div>
   </header>
 
   <main>
@@ -180,6 +205,10 @@
     const sortSel      = document.getElementById('sort-filter');
     const toggleDark   = document.getElementById('toggle-dark');
     const aiResultEl   = document.getElementById('ai-result');
+    const chatInput    = document.getElementById('chat-input');
+    const chatSend     = document.getElementById('chat-send');
+    const chatOutput   = document.getElementById('chat-output');
+    let chatHistory    = [];
     const stationsDiv  = document.getElementById('stations');
     let currentAudio = null;
 
@@ -194,6 +223,10 @@
     );
     searchInput.addEventListener('keydown', e=>{
       if(e.key==='Enter') runSearch();
+    });
+    chatSend.addEventListener('click', runChat);
+    chatInput.addEventListener('keydown', e=>{
+      if(e.key==='Enter') runChat();
     });
 
     // on load
@@ -390,6 +423,31 @@
       }catch(e){
         console.warn('Summary fetch failed', e);
         el.textContent = '—';
+      }
+    }
+
+    async function runChat(){
+      const text = chatInput.value.trim();
+      if(!text) return;
+      chatHistory.push({ role:'user', content:text });
+      chatInput.value = '';
+      chatOutput.textContent = 'Loading...';
+      try{
+        const r = await fetch(`${API_BASE}/chat`, {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ messages: chatHistory })
+        });
+        if(!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        if(j.answer){
+          chatHistory.push({ role:'assistant', content:j.answer });
+          chatOutput.textContent = j.answer;
+        } else {
+          chatOutput.textContent = 'No answer.';
+        }
+      }catch(e){
+        chatOutput.textContent = 'Error: '+e.message;
       }
     }
 
