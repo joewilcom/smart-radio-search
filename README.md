@@ -36,7 +36,7 @@ Discover, preview, and play streaming radio stations from around the world with 
     * **Flag CDN:** For displaying country flags.
 * **Deployment:**
     * **Frontend:** GitHub Pages
-    * **Backend:** Koyeb (or any platform supporting Python/Flask deployment)
+    * **Backend:** Fly.io (or any platform supporting Python/Flask deployment)
 
 ## Project Structure
 
@@ -53,7 +53,7 @@ A brief overview of key files and folders:
 ├── app.py                # Or if Flask app is at root
 ├── requirements.txt      # Or if at root
 ├── .env                  # Or if at root (for local dev)
-├── Dockerfile            # For containerized deployment (optional for Koyeb basic deploys)
+├── Dockerfile            # For containerized deployment (optional for Fly.io deploys)
 └── README.md             # This file
 ```
 ## How It Works
@@ -126,15 +126,15 @@ To run this project locally, you'll need Python 3.x and an OpenAI API Key.
         ```bash
         python app.py
         ```
-        The backend should now be running, typically on `http://127.0.0.1:5000/`.
+        The backend should now be running, typically on `http://127.0.0.1:8080/`.
 
 3.  **Frontend Setup (`index.html`):**
     * **Configure API Base URL (if needed):**
         Open `index.html` in your text editor. Find the line:
-        `const API_BASE = 'https://simple-naomi-joewilcom-71ae2211.koyeb.app';`
+        `const API_BASE = 'https://smart-radio-search.fly.dev';`
         For local testing against your local backend, change this to:
-        `const API_BASE = 'http://127.0.0.1:5000';`
-        Remember to change it back to your deployed Koyeb URL when committing for the live version.
+        `const API_BASE = 'http://127.0.0.1:8080';`
+        Remember to change it back to your deployed Fly.io URL when committing for the live version.
     * **Open in browser:**
         Open the `index.html` file directly in your web browser.
 
@@ -144,10 +144,10 @@ To run this project locally, you'll need Python 3.x and an OpenAI API Key.
     * The `index.html` file (and any other static assets if you add them) can be deployed using GitHub Pages.
     * Ensure your GitHub repository is configured to serve from the appropriate branch and folder.
     * The `API_BASE` constant in `index.html` must point to your deployed backend URL.
-* **Backend (Koyeb):**
-    * The Flask application (`app.py`) is deployed to Koyeb.
-    * Koyeb can typically build and deploy from `requirements.txt`. If you use a `Dockerfile`, ensure it's configured correctly.
-    * **Crucially, set the `OPENAI_API_KEY` environment variable in your Koyeb service settings.**
+* **Backend (Fly.io):**
+    * The Flask application (`app.py`) is deployed to Fly.io.
+    * Fly.io can typically build and deploy from `requirements.txt`. If you use a `Dockerfile`, ensure it's configured correctly.
+    * **Crucially, set the `OPENAI_API_KEY` environment variable in your Fly.io service settings.**
     * The backend uses `Flask-CORS` and is configured to allow requests from any origin for easier local testing. Adjust this in `app.py` if you need stricter rules.
 
 ## Contributing
