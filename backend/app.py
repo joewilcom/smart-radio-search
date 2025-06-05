@@ -32,20 +32,30 @@ def countries():
     try:
         resp = requests.get(f"{RADIO_API}/countries", timeout=10)
         resp.raise_for_status()
-        countries_data = resp.json()
-        result = [
-            {
-                "code": c.get("iso_3166_1", "").upper(),
-                "name": c.get("name", ""),
-            }
-            for c in countries_data
-            if c.get("iso_3166_1") and c.get("name")
-        ]
-        result.sort(key=lambda x: x["name"])
-        return jsonify(result)
+        data = resp.json()
     except requests.exceptions.RequestException as e:
         print(f"Error fetching countries: {e}")
-        return jsonify({"error": "Failed to fetch countries from Radio API"}), 502
+        data = []
+
+    # Fallback to a minimal static list if the API call fails
+    if not data:
+        data = [
+            {"iso_3166_1": "US", "name": "United States"},
+            {"iso_3166_1": "GB", "name": "United Kingdom"},
+            {"iso_3166_1": "DE", "name": "Germany"},
+            {"iso_3166_1": "FR", "name": "France"},
+        ]
+
+    result = [
+        {
+            "code": c.get("iso_3166_1", "").upper(),
+            "name": c.get("name", ""),
+        }
+        for c in data
+        if c.get("iso_3166_1") and c.get("name")
+    ]
+    result.sort(key=lambda x: x["name"])
+    return jsonify(result)
 
 
 @app.route("/search", methods=["POST"])
