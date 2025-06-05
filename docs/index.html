@@ -66,6 +66,25 @@
       color: var(--link);
     }
 
+    .chat {
+      margin: 1rem 0;
+    }
+    .chat input,
+    .chat button {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.95rem;
+      border: 1px solid #aaa;
+      border-radius: 4px;
+    }
+    .chat button {
+      cursor: pointer;
+    }
+    #chat-output {
+      margin-top: 0.5rem;
+      font-size: 0.9rem;
+      white-space: pre-wrap;
+    }
+
     /* ─── Stations Grid ─────────────────────────────────────────────────────── */
     #stations {
       display: grid;
@@ -155,6 +174,12 @@
     </div>
 
     <p id="ai-result"></p>
+
+    <div class="chat">
+      <input id="chat-input" placeholder="Ask the AI for station ideas..." />
+      <button id="chat-send">Send</button>
+      <div id="chat-output"></div>
+    </div>
   </header>
 
   <main>
@@ -180,6 +205,10 @@
     const sortSel      = document.getElementById('sort-filter');
     const toggleDark   = document.getElementById('toggle-dark');
     const aiResultEl   = document.getElementById('ai-result');
+    const chatInput    = document.getElementById('chat-input');
+    const chatSend     = document.getElementById('chat-send');
+    const chatOutput   = document.getElementById('chat-output');
+    let chatHistory    = [];
     const stationsDiv  = document.getElementById('stations');
     let currentAudio = null;
 
@@ -194,6 +223,10 @@
     );
     searchInput.addEventListener('keydown', e=>{
       if(e.key==='Enter') runSearch();
+    });
+    chatSend.addEventListener('click', runChat);
+    chatInput.addEventListener('keydown', e=>{
+      if(e.key==='Enter') runChat();
     });
 
     // on load
@@ -239,14 +272,14 @@
       // Base payload. `filter_dead` is not a param for our backend.
       // `sort_by` is handled by your Radio API directly, if supported, or by sorting results client-side if needed.
       // Your backend currently doesn't use sort_by from payload directly. Sort happens via Radio API params.
-      let payload = { 
+      let payload = {
         top: opts.top || false, // For fetching top stations
         // sort_by: sortSel.value // Your backend doesn't currently consume this. Sorting is by RadioAPI params.
-      }; 
+      };
       let stations = [];
 
       const searchText = searchInput.value.trim();
-      
+
       if (payload.top) {
         // For 'top' searches, we don't usually send name, tagList, or countrycode
         // The backend /search route handles 'top:true' by hitting a specific Radio API endpoint
@@ -282,13 +315,13 @@
         if (genreSel.value && genreSel.value !== "ALL" && !payload.tagList) {
           payload.tagList = genreSel.value;
         }
-        
+
         // Country filter
         if (countrySel.value && countrySel.value !== "ALL") {
           payload.countrycode = countrySel.value;
         }
       }
-      
+
       // Add sorting preference - your backend will pass this to Radio-Browser if it's a supported param there
       // The Radio Browser API documentation should be checked for how it handles sorting.
       // The '/stations/search' endpoint supports 'order' (name, stationcount, votes, clicks, bitrate, lastchangetime, random)
@@ -347,7 +380,7 @@
           // Potentially update UI to reflect fallback failure too
         }
       }
-      
+
       // Client-side sorting based on sortSel.value, as backend doesn't implement it from payload yet for /search
       if (Array.isArray(stations) && stations.length > 0) {
         const sortBy = sortSel.value; // 'votes', 'clickcount', 'bitrate'
@@ -392,6 +425,32 @@
         el.textContent = '—';
       }
     }
+
+    async function runChat(){
+      const text = chatInput.value.trim();
+      if(!text) return;
+      chatHistory.push({ role:'user', content:text });
+      chatInput.value = '';
+      chatOutput.textContent = 'Loading...';
+      try{
+        const r = await fetch(`${API_BASE}/chat`, {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ messages: chatHistory })
+        });
+        if(!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        if(j.answer){
+          chatHistory.push({ role:'assistant', content:j.answer });
+          chatOutput.textContent = j.answer;
+        } else {
+          chatOutput.textContent = 'No answer.';
+        }
+      }catch(e){
+        chatOutput.textContent = 'Error: '+e.message;
+      }
+    }
+
 
     // create a card
     function createCard(st,rank){
@@ -449,7 +508,7 @@
           tg.innerHTML = 'Tags: ' + tagsArray.map(t=>
             `<a href="#" data-tag="${t}">${t}</a>`
           ).join(', ') + ((st.tags || '').split(',').length > 5 ? ' …' : '');
-          
+
           tg.querySelectorAll('a').forEach(a=>{
             a.addEventListener('click', e=>{
               e.preventDefault();
