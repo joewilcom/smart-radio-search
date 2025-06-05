@@ -9,8 +9,8 @@ from dotenv import load_dotenv # Added to load .env file for local development
 load_dotenv()
 
 app = Flask(__name__)
-# Allow only your GH Pages origin to talk to us
-CORS(app, origins=["https://joewilcom.github.io"]) # Ensure this matches your GitHub pages URL
+# Allow requests from any origin so local testing works
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 RADIO_API = "https://all.api.radio-browser.info/json"
 

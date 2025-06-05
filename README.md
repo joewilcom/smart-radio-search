@@ -138,7 +138,7 @@ To run this project locally, you'll need Python 3.x and an OpenAI API Key.
     * The Flask application (`app.py`) is deployed to Koyeb.
     * Koyeb can typically build and deploy from `requirements.txt`. If you use a `Dockerfile`, ensure it's configured correctly.
     * **Crucially, set the `OPENAI_API_KEY` environment variable in your Koyeb service settings.**
-    * The backend includes `Flask-CORS` to allow requests from your GitHub Pages URL (`https://joewilcom.github.io`).
+    * The backend uses `Flask-CORS` and is configured to allow requests from any origin for easier local testing. Adjust this in `app.py` if you need stricter rules.
 
 ## Contributing
 
