@@ -98,6 +98,15 @@
       padding: 0 1rem 1rem;
     }
 
+    #load-more {
+      text-align: center;
+      margin: 1rem 0;
+    }
+    #load-more a {
+      color: var(--link);
+      cursor: pointer;
+    }
+
     /* ─── Station Card ──────────────────────────────────────────────────────── */
     .station-card {
       background: var(--card-bg);
@@ -192,6 +201,7 @@
   <main>
     <div id="stations">
       </div>
+    <div id="load-more"></div>
   </main>
 
   <script>
@@ -218,6 +228,11 @@
     const chatOutput   = document.getElementById('chat-output');
     let chatHistory    = [];
     const stationsDiv  = document.getElementById('stations');
+    const loadMoreDiv  = document.getElementById('load-more');
+    const TOP_LIMIT = 12;
+    const PAGE_LIMIT = 25;
+    let currentOffset = 0;
+    let lastQuery = {};
     let currentAudio = null;
     let topTagsSet = new Set();
 
@@ -295,74 +310,64 @@
 
     // ─── Two-step runSearch: name + AI tags, then fallback ────────────────────
     async function runSearch(opts = {}) {
-      aiResultEl.textContent = '';
-      stationsDiv.innerHTML = '<p>Loading…</p>';
+      const isTop = opts.top || false;
+      const isLoadMore = opts.loadMore || false;
 
-      // Base payload. `filter_dead` is not a param for our backend.
-      // `sort_by` is handled by your Radio API directly, if supported, or by sorting results client-side if needed.
-      // Your backend currently doesn't use sort_by from payload directly. Sort happens via Radio API params.
-      let payload = {
-        top: opts.top || false, // For fetching top stations
-        // sort_by: sortSel.value // Your backend doesn't currently consume this. Sorting is by RadioAPI params.
-      };
-      let stations = [];
-
-      const searchText = searchInput.value.trim();
-
-      if (payload.top) {
-        // For 'top' searches, we don't usually send name, tagList, or countrycode
-        // The backend /search route handles 'top:true' by hitting a specific Radio API endpoint
+      if (!isLoadMore) {
+        currentOffset = 0;
+        lastQuery = {};
+        stationsDiv.innerHTML = '<p>Loading…</p>';
+        loadMoreDiv.textContent = '';
       } else {
-        // For regular searches (not 'top')
-        if (searchText) {
-          payload.name = searchText; // Send the raw text as 'name'
-
-          // Try AI tags
-          try {
-            const aiResp = await fetch(`${API_BASE}/ai-query`, {
-              method:'POST',
-              headers:{ 'Content-Type':'application/json' },
-              body: JSON.stringify({ query: searchText })
-            });
-            if (!aiResp.ok) throw new Error(`AI Query HTTP error! status: ${aiResp.status}`);
-            const aiJson = await aiResp.json();
-            if (aiJson.tags) {
-              let parts = aiJson.tags.split(',').map(t=>t.trim().toLowerCase()).filter(Boolean);
-              const matched = parts.filter(t => topTagsSet.has(t));
-              const finalTags = matched.length > 0 ? matched.join(',') : parts.join(',');
-              aiResultEl.innerHTML =
-                'AI suggested tags: <strong>'+finalTags+'</strong>';
-              payload.tagList = finalTags; // AI tags will be used by the backend
-            }
-          } catch(e){
-            console.warn('AI refine failed, using name only for tags potentially', e);
-            aiResultEl.textContent = 'AI query failed. Using general search.';
-          }
-        }
-
-        // If a genre is selected from the dropdown and AI didn't provide tags (or to supplement/override)
-        // Your backend logic currently prioritizes tagList if present.
-        // If AI provides tags, this genreSel.value for tagList might be redundant unless AI fails.
-        // Let's ensure tagList is set if genre dropdown is used and AI tags are empty.
-        if (genreSel.value && genreSel.value !== "ALL" && !payload.tagList) {
-          payload.tagList = genreSel.value;
-        }
-
-        // Country filter
-        if (countrySel.value && countrySel.value !== "ALL") {
-          payload.countrycode = countrySel.value;
-        }
+        currentOffset += PAGE_LIMIT;
+        loadMoreDiv.textContent = 'Loading…';
       }
 
-      // Add sorting preference - your backend will pass this to Radio-Browser if it's a supported param there
-      // The Radio Browser API documentation should be checked for how it handles sorting.
-      // The '/stations/search' endpoint supports 'order' (name, stationcount, votes, clicks, bitrate, lastchangetime, random)
-      // and 'reverse' (true/false). Let's adapt to that.
-      // Your backend currently doesn't dynamically add these from payload for the search endpoint.
-      // The topclick endpoint is already sorted. For search, we'd need to modify backend or sort client-side.
-      // For now, payload might carry this intent if backend is updated.
-      // payload.order = sortSel.value; // e.g. 'votes'
-      // payload.reverse = true; // Assuming all your sorts are descending
+      aiResultEl.textContent = '';
+
+      let payload = { top: isTop };
+      payload.limit = isTop ? TOP_LIMIT : PAGE_LIMIT + 1;
+      payload.offset = currentOffset;
+      let stations = [];
+
+      if (!isTop) {
+        if (isLoadMore) {
+          Object.assign(payload, lastQuery);
+        } else {
+          const searchText = searchInput.value.trim();
+          if (searchText) {
+            payload.name = searchText;
+            try {
+              const aiResp = await fetch(`${API_BASE}/ai-query`, {
+                method:'POST',
+                headers:{ 'Content-Type':'application/json' },
+                body: JSON.stringify({ query: searchText })
+              });
+              if (aiResp.ok) {
+                const aiJson = await aiResp.json();
+                if (aiJson.tags) {
+                  let parts = aiJson.tags.split(',').map(t=>t.trim().toLowerCase()).filter(Boolean);
+                  const matched = parts.filter(t => topTagsSet.has(t));
+                  const finalTags = matched.length > 0 ? matched.join(',') : parts.join(',');
+                  aiResultEl.innerHTML = 'AI suggested tags: <strong>'+finalTags+'</strong>';
+                  payload.tagList = finalTags;
+                }
+              }
+            } catch(e){
+              console.warn('AI refine failed', e);
+            }
+          }
+
+          if (genreSel.value && genreSel.value !== 'ALL' && !payload.tagList) {
+            payload.tagList = genreSel.value;
+          }
+          if (countrySel.value && countrySel.value !== 'ALL') {
+            payload.countrycode = countrySel.value;
+          }
+
+          lastQuery = { name: payload.name, tagList: payload.tagList, countrycode: payload.countrycode };
+        }
+      }
 
       try {
         const r1 = await fetch(`${API_BASE}/search`, {
@@ -371,70 +376,80 @@
           body: JSON.stringify(payload)
         });
         if (!r1.ok) {
-          const errorData = await r1.json().catch(() => ({})); // Try to get error details
+          const errorData = await r1.json().catch(() => ({}));
           throw new Error(`Primary search HTTP error! status: ${r1.status}. ${errorData.error || ''} ${errorData.details || ''}`);
         }
         stations = await r1.json();
       } catch(e){
         console.error('Primary search failed', e);
         stationsDiv.innerHTML = `<p>Error fetching stations: ${e.message}. Please try again.</p>`;
-        return; // Stop further processing
+        loadMoreDiv.textContent = '';
+        return;
       }
 
-      // Fallback logic: If zero results AND AI tags were used AND a name was searched
-      // The backend now uses 'searchterm' if 'name' is present but 'tagList' from AI is not.
-      // This client-side fallback might be less necessary with the improved backend logic,
-      // but we can keep it for scenarios where AI tags were very specific and restrictive.
-      if ((!stations || stations.length === 0) && payload.tagList && payload.name) {
-        console.info('No AI-tagged results, retrying with name as primary search term (if backend didnt already do broad search)');
+      if (!isTop && !isLoadMore && (!stations || stations.length === 0) && payload.tagList && payload.name) {
         const fallbackPayload = { ...payload };
-        delete fallbackPayload.tagList; // Remove AI tags
-        // Backend will now use payload.name as 'searchterm' if tagList is absent.
-        // Or, if we want to explicitly tell backend to use name as 'name' (less broad):
-        // fallbackPayload.name = payload.name (already there)
-
+        delete fallbackPayload.tagList;
         try {
           const r2 = await fetch(`${API_BASE}/search`, {
             method:'POST',
             headers:{ 'Content-Type':'application/json' },
-            body: JSON.stringify(fallbackPayload) // Send payload without AI's tagList
+            body: JSON.stringify(fallbackPayload)
           });
-          if (!r2.ok) {
-            const errorData = await r2.json().catch(() => ({}));
-            throw new Error(`Fallback search HTTP error! status: ${r2.status}. ${errorData.error || ''} ${errorData.details || ''}`);
-          }
-          stations = await r2.json();
-          if (stations.length > 0) {
-            aiResultEl.innerHTML = 'AI suggested tags yielded no results. Showing results for general search: <strong>'+payload.name+'</strong>';
+          if (r2.ok) {
+            stations = await r2.json();
+            if (stations.length > 0) {
+              aiResultEl.innerHTML = 'AI suggested tags yielded no results. Showing results for general search: <strong>'+payload.name+'</strong>';
+              lastQuery = { name: payload.name, countrycode: payload.countrycode };
+            }
           }
         } catch(e){
           console.error('Fallback name-only search failed', e);
-          // Potentially update UI to reflect fallback failure too
         }
       }
 
-      // Client-side sorting based on sortSel.value, as backend doesn't implement it from payload yet for /search
       if (Array.isArray(stations) && stations.length > 0) {
-        const sortBy = sortSel.value; // 'votes', 'clickcount', 'bitrate'
-        stations.sort((a, b) => {
-          // Ensure values are numbers for proper sorting; default to 0 if not present
-          const valA = Number(a[sortBy]) || 0;
-          const valB = Number(b[sortBy]) || 0;
-          return valB - valA; // Descending order
-        });
+        const sortBy = sortSel.value;
+        stations.sort((a, b) => (Number(b[sortBy])||0) - (Number(a[sortBy])||0));
       }
 
-      renderStations(Array.isArray(stations) ? stations : []);
+      let hasMore = false;
+      if (!isTop && stations.length > PAGE_LIMIT) {
+        hasMore = true;
+        stations = stations.slice(0, PAGE_LIMIT);
+      }
+
+      renderStations(Array.isArray(stations) ? stations : [], isLoadMore);
+      updateLoadMore(hasMore, isTop);
     }
 
     // render
-    function renderStations(list){
-      if(!list.length){
-        stationsDiv.innerHTML = '<p>No stations found. Try a different search or broader filters.</p>';
+    function renderStations(list, append){
+      if(!append){
+        stationsDiv.innerHTML = '';
+        if(!list.length){
+          stationsDiv.innerHTML = '<p>No stations found. Try a different search or broader filters.</p>';
+          return;
+        }
+      }
+      const startRank = currentOffset + 1;
+      list.forEach((st,i)=> createCard(st,startRank + i));
+    }
+
+    function updateLoadMore(hasMore, isTop){
+      if(isTop){
+        loadMoreDiv.textContent = '';
         return;
       }
-      stationsDiv.innerHTML = ''; // Clear previous results or "Loading..."
-      list.forEach((st,i)=> createCard(st,i+1));
+      if(hasMore){
+        loadMoreDiv.innerHTML = '<a href="#" id="load-more-link">Load more stations</a>';
+        document.getElementById('load-more-link').addEventListener('click', e=>{
+          e.preventDefault();
+          runSearch({ loadMore: true });
+        });
+      } else {
+        loadMoreDiv.textContent = 'End of results';
+      }
     }
 
     async function fetchSummary(station, el){

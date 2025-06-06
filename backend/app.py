@@ -90,20 +90,22 @@ def tags():
 def search():
     data = request.get_json() or {}
     top = data.get("top", False)
-    country_code = data.get("countrycode") # from country dropdown
-    tag_list_from_frontend = data.get("tagList") # from AI or genre dropdown
-    name_from_frontend = data.get("name") # from search text input
-
-    params = {"limit": 50} # Consider making limit configurable or slightly higher
-
-    if country_code and country_code != "ALL":
-        params["countrycode"] = country_code
+    country_code = data.get("countrycode")  # from country dropdown
+    tag_list_from_frontend = data.get("tagList")  # from AI or genre dropdown
+    name_from_frontend = data.get("name")  # from search text input
+    limit = int(data.get("limit", 50))
+    offset = int(data.get("offset", 0))
 
     if top:
-        url = f"{RADIO_API}/stations/topclick/50" # Using 50 as per your original code
-                                                # consider matching limit if it changes
+        url = f"{RADIO_API}/stations/topvote/{limit}"
+        params = {}
+        if country_code and country_code != "ALL":
+            params["countrycode"] = country_code
     else:
         url = f"{RADIO_API}/stations/search"
+        params = {"limit": limit, "offset": offset}
+        if country_code and country_code != "ALL":
+            params["countrycode"] = country_code
 
         # Refined logic for using tag_list, name, and searchterm
         if tag_list_from_frontend and tag_list_from_frontend != "ALL":
